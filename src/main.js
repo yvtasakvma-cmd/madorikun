@@ -140,7 +140,7 @@ function selectTool(next) {
 
 function fieldInstructions() {
   const label = {
-    select: 'ドラッグで移動 · Alt＋ドラッグで複製',
+    select: '空いている所からドラッグで複数選択 · 図形をドラッグで移動',
     wall: 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
@@ -376,13 +376,21 @@ function updateScene() {
   }
 }
 
+function marqueeMarkup({ bounds }) {
+  const { x, y, width, height } = bounds;
+  return `<rect class="selection-marquee" x="${x}" y="${y}" width="${width}" height="${height}"
+    fill="#18836b" fill-opacity=".08" stroke="#157f69" stroke-width="${1 / view.scale}"
+    stroke-dasharray="${4 / view.scale} ${3 / view.scale}" pointer-events="none"/>`;
+}
+
 function draw() {
   drawFrame = 0;
   const d = doc();
   $('#paper').setAttribute('width', d.width);
   $('#paper').setAttribute('height', d.height);
   updateScene();
-  overlay.innerHTML = draftMarkup() + handlesMarkup(selectedObjects());
+  overlay.innerHTML = draftMarkup() + (drag?.type === 'marquee' && drag.bounds
+    ? marqueeMarkup(drag) : handlesMarkup(selectedObjects()));
 }
 
 function scheduleDraw() {
@@ -585,7 +593,7 @@ function cancelDrag() {
   if (!drag) return;
   const current = drag;
   drag = null;
-  if (current.type !== 'pan') {
+  if (current.type !== 'pan' && current.type !== 'marquee') {
     state = current.before;
     selection.clear();
     for (const id of current.ids ?? []) selection.add(id);
@@ -621,9 +629,13 @@ stage.addEventListener('pointerdown', event => {
     return;
   }
   if (pointerTool === 'underlay' || pointerTool === 'select') {
+    const clicked = itemBy(hit);
+    if (pointerTool === 'select' && (!clicked || !canEditItem(clicked))) {
+      beginDrag(event, 'marquee', { clicked, underlay: hit === 'underlay' && editable('underlay') });
+      return;
+    }
     if (hit === 'underlay' && !editable('underlay')) return;
-    const item = itemBy(hit);
-    if (item && (!canEditItem(item) || pointerTool === 'underlay')) return;
+    if (clicked && (!canEditItem(clicked) || pointerTool === 'underlay')) return;
     if (!event.shiftKey && (!hit || !selection.has(hit))) selection.clear();
     if (hit && event.shiftKey && selection.has(hit)) selection.delete(hit);
     else if (hit) {
@@ -765,6 +777,11 @@ function updateDrag(event) {
     return;
   }
   const point = toWorld(screen);
+  if (current.type === 'marquee') {
+    current.bounds = polygonBounds([current.start, point]);
+    scheduleDraw();
+    return;
+  }
   const graph = structuredClone(current.before.doc);
   if (current.type === 'move') {
     current.copyIds ??= new Map();
@@ -801,6 +818,27 @@ stage.addEventListener('pointerleave', () => {
   scheduleDraw();
 });
 
+function finishMarquee(current, addToSelection) {
+  if (!current.bounds) {
+    if (current.clicked || (addToSelection && !current.underlay)) return;
+    selection.clear();
+    if (current.underlay) selection.add('underlay');
+    return;
+  }
+
+  if (!addToSelection) selection.clear();
+  selection.delete('underlay');
+  const { x, y, width, height } = current.bounds;
+  for (const item of doc().objects) {
+    if (!canEditItem(item)) continue;
+    const box = objectBounds(item);
+    if (box.x >= x && box.y >= y && box.x + box.width <= x + width && box.y + box.height <= y + height) {
+      selection.add(item.id);
+    }
+  }
+  status(selection.size ? selection.size + '個の図形を選択しました。' : '選択を解除しました。');
+}
+
 stage.addEventListener('pointerup', event => {
   if (drag?.pointer !== event.pointerId) return;
   if (queuedMove) {
@@ -810,7 +848,9 @@ stage.addEventListener('pointerup', event => {
   const current = drag;
   if (current.moved || lengthOf(screenPoint(event), current.screen) >= 3) updateDrag(event);
   drag = null;
-  if (current.type !== 'pan' && current.moved) {
+  if (current.type === 'marquee') {
+    finishMarquee(current, event.shiftKey);
+  } else if (current.type !== 'pan' && current.moved) {
     record(current.before);
     status(current.duplicate ? '図形を複製しました。' : '図形を更新しました。');
   }

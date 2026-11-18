@@ -130,6 +130,7 @@ export function layout() {
       <dl class="shortcut-list">
         <dt>Alt ＋ ドラッグ</dt><dd>選択した図形を複製して移動</dd>
         <dt>Shift ＋ 角をドラッグ</dt><dd>縦横比を保って拡大・縮小</dd>
+        <dt>Shift ＋ 範囲をドラッグ</dt><dd>囲んだ図形を選択に追加</dd>
         <dt>Shift ＋ クリック</dt><dd>作図時は自由な角度、選択時は図形を追加</dd>
         <dt>Ctrl ＋ クリック</dt><dd>一時的に選択。壁の連続描画中は終了</dd>
         <dt>Space ＋ ドラッグ</dt><dd>キャンバスを移動</dd>
