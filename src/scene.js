@@ -1,4 +1,4 @@
-import { add, floors, lengthOf, rotate, wallSegments } from './model.js';
+import { add, floors, lengthOf, rotate, wallJunctionCaps, wallSegments } from './model.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -199,6 +199,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
     if (!openings.has(item.wallId)) openings.set(item.wallId, []);
     openings.get(item.wallId).push(item);
   }
+  const caps = wallJunctionCaps(grouped.get('wall'), openings);
   const fills = doc.layers.filter(layer => layer.visible && layer.id === 'color')
     .flatMap(layer => grouped.get(layer.id));
   const color = mono ? '#000000' : ink;
@@ -218,7 +219,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
       } else if (item.layer === 'wall') {
-        const segments = wallSegments(item, openings.get(item.id));
+        const segments = wallSegments(item, openings.get(item.id), caps.get(item.id));
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
         drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}">${drawing}</g>`;
       } else if (item.layer === 'text') {

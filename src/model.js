@@ -152,7 +152,65 @@ export function syncOpenings(doc, wallId) {
   }
 }
 
-export function wallSegments(wall, openings) {
+export function wallDirection(wall) {
+  if (wall.a[1] === wall.b[1]) return 0;
+  if (wall.a[0] === wall.b[0]) return 1;
+  return null;
+}
+
+function firstWallAtOrBeyond(walls, axis, value) {
+  let low = 0;
+  let high = walls.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (walls[middle].a[axis] < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+export function wallJunctionCaps(walls, openings) {
+  const byDirection = [[], []];
+  for (const wall of walls) {
+    const axis = wallDirection(wall);
+    if (axis !== null) byDirection[axis].push(wall);
+  }
+  for (const axis of [0, 1]) byDirection[axis].sort((a, b) => a.a[1 - axis] - b.a[1 - axis]);
+
+  const caps = new Map();
+  for (const axis of [0, 1]) {
+    const crossWalls = byDirection[1 - axis];
+    const searchRadius = crossWalls.reduce((max, wall) => Math.max(max, wall.width / 2), 0);
+    for (const wall of byDirection[axis]) {
+      const defaultCap = wall.width / 2;
+      const radius = Math.max(searchRadius, defaultCap);
+      const size = lengthOf(wall.a, wall.b);
+      const direction = Math.sign(wall.b[axis] - wall.a[axis]);
+      const ends = [wall.a, wall.b].map((tip, index) => {
+        let cap = defaultCap;
+        const outward = index === 0 ? -direction : direction;
+        const first = firstWallAtOrBeyond(crossWalls, axis, tip[axis] - radius);
+        for (let i = first; i < crossWalls.length; i++) {
+          const mate = crossWalls[i];
+          const offset = mate.a[axis] - tip[axis];
+          if (offset > radius) break;
+          if (Math.abs(offset) > Math.max(defaultCap, mate.width / 2) || offset * outward <= -size) continue;
+          const section = 1 - axis;
+          const span = mate.b[section] - mate.a[section];
+          const t = (tip[section] - mate.a[section]) / span;
+          if (!(t >= 0 && t <= 1)) continue;
+          if (openings.get(mate.id)?.some(part => Math.abs(t - part.t) * Math.abs(span) < part.w / 2)) continue;
+          cap = Math.min(cap, offset * outward + mate.width / 2);
+        }
+        return cap;
+      });
+      caps.set(wall.id, ends);
+    }
+  }
+  return caps;
+}
+
+export function wallSegments(wall, openings, caps = [wall.width / 2, wall.width / 2]) {
   const size = lengthOf(wall.a, wall.b);
   if (!size) return [];
   const intervals = (openings ?? []).map(part => {
@@ -160,12 +218,13 @@ export function wallSegments(wall, openings) {
     return [Math.max(0, part.t - half), Math.min(1, part.t + half)];
   }).sort((a, b) => a[0] - b[0]);
   const segments = [];
-  const cap = wall.width / (2 * size);
-  let start = -cap;
+  const stop = 1 + caps[1] / size;
+  let start = -caps[0] / size;
   for (const [low, high] of intervals) {
-    if (low > Math.max(0, start) + 0.0001) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, low)]);
+    const end = Math.min(low, stop);
+    if (end > Math.max(0, start) + 0.0001) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, end)]);
     start = Math.max(start, high);
   }
-  if (start < 1) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, 1 + cap)]);
+  if (start < 1 && start < stop) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, stop)]);
   return segments;
 }

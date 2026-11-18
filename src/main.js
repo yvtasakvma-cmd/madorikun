@@ -2,7 +2,7 @@ import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
   add, alignFinalCorner, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
-  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid,
+  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
 import {
@@ -454,7 +454,7 @@ function wallSnapTarget(point, stickyTarget, accepts) {
 function updateDraftHover(point, free) {
   const stickyTarget = hover?.wallTarget;
   const wallTarget = tool !== 'wall' ? null : pending.length
-    ? wallDraft(point, free, stickyTarget).target
+    ? wallDraft(point, free, stickyTarget).stickyTarget
     : wallSnapTarget(point, stickyTarget);
   hover = { point, free, atStart: isClosingPoint(point), wallTarget };
   scheduleDraw();
@@ -481,6 +481,24 @@ function applyWallAdjustment(graph, adjustment) {
   syncOpenings(graph, wall.id);
 }
 
+function intersectingWallTarget(point, start, end) {
+  const axis = wallDirection({ a: start, b: end });
+  if (axis === null || lengthOf(start, end) < 1) return null;
+  let nearest = null;
+  let best = SNAP_RADIUS / view.scale;
+  for (const wall of doc().objects) {
+    if (wall.layer !== 'wall' || wallDirection(wall) !== 1 - axis) continue;
+    const crossing = [...end];
+    crossing[axis] = wall.a[axis];
+    const { t } = projectOnWall(crossing, wall);
+    const distance = lengthOf(point, crossing);
+    if (t <= 0 || t >= 1 || distance > best || lengthOf(start, crossing) < 1) continue;
+    nearest = crossing;
+    best = distance;
+  }
+  return nearest;
+}
+
 function wallDraft(point, free, stickyTarget) {
   const start = pending[0];
   const tail = wallChain?.tailId ? itemBy(wallChain.tailId) : null;
@@ -501,8 +519,10 @@ function wallDraft(point, free, stickyTarget) {
     return lengthOf(aligned, start) * view.scale <= SNAP_RADIUS ? { start: aligned } : null;
   }
   const target = wallSnapTarget(point, stickyTarget, connection);
-  return target ? { ...connection(target), end: [...target], target }
-    : { start, end: free ? point : snapDrawingAngle(point, start), target: null };
+  if (target) return { ...connection(target), end: [...target], target, stickyTarget: target };
+  const end = free ? point : snapDrawingAngle(point, start);
+  const intersection = free ? null : intersectingWallTarget(point, start, end);
+  return { start, end: intersection ?? end, target: intersection };
 }
 
 function isClosingPoint(point) {
