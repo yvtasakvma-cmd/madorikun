@@ -1,7 +1,7 @@
 import './style.css';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
-  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, wallDrawingGeometry,
@@ -53,6 +53,8 @@ let previewSetup = null;
 const rasterUrls = new Set();
 const SNAP_RADIUS = 16;
 const SNAP_RELEASE_RADIUS = 22;
+const FIXTURE_SNAP_RADIUS = 6;
+const fixtureSnapWalls = new WeakMap();
 const HANDLES = ['nw', 'ne', 'se', 'sw'];
 const EDGE_HANDLES = ['n', 'e', 's', 'w'];
 const DIRECTIONS = {
@@ -658,6 +660,13 @@ function snapPart(part, point, graph, excluded = new Set()) {
   if (target) positionOpening(part, target.wall, target.t);
 }
 
+function snapFixture(part, graph) {
+  if (!graph.layers.find(item => item.id === 'wall').visible) return;
+  if (!fixtureSnapWalls.has(graph)) fixtureSnapWalls.set(graph, wallDrawingGeometry(graph.objects));
+  const radius = Math.min(FIXTURE_SNAP_RADIUS / view.scale, Math.min(part.w, part.h) / 4);
+  part.at = snapFixtureToWall(part, fixtureSnapWalls.get(graph).values(), radius);
+}
+
 function addItem(item, message, adjustment) {
   if (!editable(item.layer)) {
     status('「' + names(item.layer) + '」レイヤーの表示とロックを確認してください。', true);
@@ -677,7 +686,8 @@ function addItem(item, message, adjustment) {
 
 function partAt(kind, point) {
   const part = makePart(kind, point, undefined, partDesigns[kind]);
-  snapPart(part, point, doc());
+  if (part.layer === 'fixture') snapFixture(part, doc());
+  else snapPart(part, point, doc());
   return part;
 }
 
@@ -904,7 +914,10 @@ function moveItems(copy, current, delta) {
       item.points = item.points.map(point => add(point, delta));
     } else if (item.layer === 'opening') {
       if (!movedWalls.has(item.wallId)) snapPart(item, add(item.at, delta), copy, movedWalls);
-    } else item.at = add(item.at, delta);
+    } else {
+      item.at = add(item.at, delta);
+      if (item.layer === 'fixture' && items.length === 1) snapFixture(item, current.before.doc);
+    }
   }
   for (const wallId of movedWalls) syncOpenings(copy, wallId);
   if (current.duplicate) {

@@ -34,6 +34,8 @@ export const TEXT_FONTS = {
 export const DEFAULT_TEXT_FONT = 'gothic';
 
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
+export const WASHER_DASH = { min: 0.01, max: 2500 };
+export const washerDashDefault = (w, h) => Math.min(w, h) * 0.043;
 
 export const PART_DESIGNS = {
   toilet: {
@@ -180,6 +182,42 @@ export function projectOnWall(point, wall) {
   const delta = sub(point, wall.a);
   const t = square ? (delta[0] * vector[0] + delta[1] * vector[1]) / square : 0;
   return { t, distance: lengthOf(point, lerp(wall.a, wall.b, clamp(t, 0, 1))) };
+}
+
+export function snapFixtureToWall(part, walls, radius) {
+  const { at, w, h, angle } = part;
+  const stroke = part.strokeWidth ?? partStrokeDefault(part.kind, part.variant);
+  const halfAxes = [rotate([(w + stroke) / 2, 0], angle), rotate([0, (h + stroke) / 2], angle)];
+  const dot = ([x, y], [u, v]) => x * u + y * v;
+  let best = radius;
+  let snapped = at;
+  for (const { wall, segments } of walls) {
+    const length = lengthOf(wall.a, wall.b);
+    if (!length || !segments.length) continue;
+    const axis = sub(wall.b, wall.a).map(value => value / length);
+    const normal = [-axis[1], axis[0]];
+    const local = sub(at, wall.a);
+    const offset = dot(local, normal);
+    const side = Math.sign(offset) || 1;
+    const reach = halfAxes.map(half => dot(half, normal));
+    const edge = reach.reduce((sum, extent) => sum + Math.abs(extent), 0);
+    const correction = side * (wall.width / 2 + edge) - offset;
+    if (Math.abs(correction) >= best) continue;
+
+    // Project the touching edge (or corner for an angled fixture) along the wall.
+    let contact = dot(local, axis);
+    let span = 0;
+    for (const [index, half] of halfAxes.entries()) {
+      const along = dot(half, axis);
+      if (Math.abs(reach[index]) < 1e-7) span += Math.abs(along);
+      else contact -= side * Math.sign(reach[index]) * along;
+    }
+    if (!segments.some(([a, b]) =>
+      contact + span >= dot(sub(a, wall.a), axis) && contact - span <= dot(sub(b, wall.a), axis))) continue;
+    best = Math.abs(correction);
+    snapped = add(at, normal.map(value => value * correction));
+  }
+  return snapped;
 }
 
 export function positionOpening(part, wall, t) {

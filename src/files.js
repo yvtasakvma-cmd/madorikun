@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
@@ -72,6 +72,9 @@ function validateProject(doc, underlay, assetPath) {
       }
       if (item.strokeWidth !== undefined) {
         ensure(number(item.strokeWidth, PART_STROKE.min, PART_STROKE.max));
+      }
+      for (const value of [item.dashLength, item.dashGap]) {
+        if (value !== undefined) ensure(item.kind === 'washer' && number(value, WASHER_DASH.min, WASHER_DASH.max));
       }
     }
   }

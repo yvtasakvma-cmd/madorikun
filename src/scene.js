@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
 import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
@@ -10,7 +10,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap } = {}) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -81,10 +81,10 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     }
     case 'washer': {
-      const dash = Math.min(w, h) * 0.043;
+      const dash = washerDashDefault(w, h);
       const insetX = w * 0.21;
       const insetY = h * 0.21;
-      body = `<g stroke-dasharray="${dash} ${dash}">
+      body = `<g stroke-dasharray="${dashLength ?? dash} ${dashGap ?? dash}">
         ${rect(x, y, w, h)}
         ${line(x, y, x + insetX, y + insetY)}
         ${line(-x, y, -x - insetX, y + insetY)}
@@ -313,7 +313,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         const hit = entries && item.layer === 'fixture'
           ? `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" fill="transparent"/>` : '';
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, item.variant)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, item.variant, item)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };

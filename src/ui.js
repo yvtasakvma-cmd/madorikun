@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, roomColors, TEXT_FONTS } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, roomColors, TEXT_FONTS, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -214,10 +214,14 @@ export function propertyMarkup(item) {
   }
   const stroke = PART_STROKE;
   const design = Object.hasOwn(PART_DESIGNS, item.kind) ? PART_DESIGNS[item.kind] : null;
+  const dash = item.kind === 'washer' ? washerDashDefault(item.w, item.h) : null;
   return (design ? selectField('デザイン', 'object-variant', item.variant ?? design.default, Object.entries(design.choices)) : '')
     + numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
     + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind, item.variant), stroke.min, stroke.max, 0.01)
+    + (dash === null ? ''
+      : numberField('破線の長さ', 'object-dashLength', item.dashLength ?? dash, WASHER_DASH.min, WASHER_DASH.max, 0.01)
+        + numberField('破線の間隔', 'object-dashGap', item.dashGap ?? dash, WASHER_DASH.min, WASHER_DASH.max, 0.01))
     + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
       <div class="property-actions part-actions">
         ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}
