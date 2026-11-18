@@ -1,4 +1,4 @@
-import { add, floors, lengthOf, OPENING_STROKE, rotate, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, lengthOf, OPENING_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -166,22 +166,40 @@ export function rotatedBounds(center, width, height, angle) {
     .map(point => add(center, rotate(point, angle))));
 }
 
-const pathFields = { M: ['x', 'y'], L: ['x', 'y'], Q: ['x1', 'y1', 'x', 'y'], C: ['x1', 'y1', 'x2', 'y2', 'x', 'y'], Z: [] };
+const svgCommands = { moveTo: 'M', lineTo: 'L', quadraticCurveTo: 'Q', bezierCurveTo: 'C', closePath: 'Z' };
 
-function outlinePath(path) {
-  return path.commands.map(command => command.type
-    + pathFields[command.type].map(field => Number(command[field].toFixed(3))).join(' ')).join('');
+function outlineFontLine(font, line, size, baseline) {
+  const shaped = font.layout(line);
+  const scale = size / font.unitsPerEm;
+  let x = -shaped.advanceWidth * scale / 2;
+  let y = baseline;
+  let path = '';
+  for (let i = 0; i < shaped.glyphs.length; i++) {
+    const position = shaped.positions[i];
+    const offsetX = x + position.xOffset * scale;
+    const offsetY = y - position.yOffset * scale;
+    for (const { command, args } of shaped.glyphs[i].path.commands) {
+      const coords = args.map((value, axis) => Number((axis % 2
+        ? offsetY - value * scale : offsetX + value * scale).toFixed(3)));
+      path += svgCommands[command] + coords.join(' ');
+    }
+    x += position.xAdvance * scale;
+    y -= position.yAdvance * scale;
+  }
+  return path;
 }
 
-function textDrawing(item, color, halo, font) {
+function textDrawing(item, color, halo, fonts) {
+  const id = item.font ?? DEFAULT_TEXT_FONT;
+  const font = fonts?.get(id);
+  const family = TEXT_FONTS[id].family;
   const lines = item.value.split('\n');
   const glyphs = lines.map((line, i) => {
     const y = (i - (lines.length - 1) / 2) * item.size * 1.22 + item.size * 0.32;
     if (font) {
-      const width = font.getAdvanceWidth(line, item.size);
-      return `<path d="${outlinePath(font.getPath(line, -width / 2, y, item.size))}"/>`;
+      return `<path d="${outlineFontLine(font, line, item.size, y)}"/>`;
     }
-    return `<text x="0" y="${y}" font-size="${item.size}" text-anchor="middle" xml:space="preserve">${escapeHtml(line)}</text>`;
+    return `<text x="0" y="${y}" font-size="${item.size}" font-family="${family}, sans-serif" text-anchor="middle" xml:space="preserve">${escapeHtml(line)}</text>`;
   }).join('');
   return `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle})">
     <g fill="${halo}" stroke="${halo}" stroke-linejoin="round" stroke-width="4">${glyphs}</g>
@@ -226,7 +244,7 @@ export function objectIntersectsBox(item, box, segments) {
     strokeIntersectsBox(p, item.points[(i + 1) % item.points.length], 0, box));
 }
 
-export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, font = null, entries = false } = {}) {
+export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, fonts = null, entries = false } = {}) {
   const geometry = wallDrawingGeometry(doc.objects);
   const grouped = new Map(doc.layers.map(layer => [layer.id, []]));
   for (const item of doc.objects) grouped.get(item.layer)?.push(item);
@@ -255,7 +273,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'text') {
         const surface = fills.findLast(fill => pointInPolygon(item.at, fill.points));
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';
-        drawing = textDrawing(item, color, halo, font);
+        drawing = textDrawing(item, color, halo, fonts);
       } else {
         const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">

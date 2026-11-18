@@ -1,7 +1,6 @@
 import './style.css';
-import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
 } from './model.js';
 import {
@@ -11,11 +10,10 @@ import {
   detectImageFormat, download, exportSetup, makeExport, readProject, renderUnderlay, saveProject, UNDERLAY_LIMIT,
 } from './files.js';
 import {
-  colorField, floorChoices, icon, importButton, layout, numberField, partPalette,
+  colorField, floorChoices, fontChoices, icon, importButton, layout, numberField, partPalette,
   propertyMarkup, removeButton, roomChoices, selectField, tools,
 } from './ui.js';
 
-document.fonts.add(new FontFace('Madori Drawing', `url("${fontUrl}")`));
 document.querySelector('#app').innerHTML = layout();
 const $ = selector => document.querySelector(selector);
 const stage = $('#stage');
@@ -35,7 +33,7 @@ const undoStack = [];
 const redoStack = [];
 let tool = 'select';
 const selection = new Set();
-let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18 };
+let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
 let pending = [];
 let wallChain = null;
@@ -93,13 +91,13 @@ function record(previous) {
   pruneRasterUrls();
 }
 
-function commit(edit, message, asset = state.asset) {
+function commit(edit, message, asset = state.asset, refresh = renderAll) {
   const previous = state;
   const copy = structuredClone(doc());
   if (edit(copy) === false) return false;
   state = { doc: copy, asset, revision: previous.revision };
   record(previous);
-  renderAll();
+  refresh();
   if (message) status(message);
   return true;
 }
@@ -169,7 +167,8 @@ function renderContext() {
   }
   if (tool === 'color') controls = selectField('部屋の種別', 'default-room', defaults.room, roomChoices())
     + colorField('default-color', defaults.color);
-  if (tool === 'text') controls = numberField('サイズ', 'default-size', defaults.size, 4, 300);
+  if (tool === 'text') controls = selectField('書体', 'default-font', defaults.font, fontChoices())
+    + numberField('サイズ', 'default-size', defaults.size, 4, 300);
   if (tool === 'opening' || tool === 'fixture') controls = partPalette(tool, activeParts[tool])
     + (tool === 'opening'
       ? '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>'
@@ -225,15 +224,25 @@ function renderInspector() {
   }
 }
 
+function renderEditStatus() {
+  $('#dirty-dot').hidden = !dirty();
+  $('[data-action="undo"]').disabled = !undoStack.length;
+  $('[data-action="redo"]').disabled = !redoStack.length;
+}
+
+function renderTextEdit() {
+  // Keep the input and the adjacent font select mounted while focus changes.
+  renderEditStatus();
+  scheduleDraw();
+}
+
 function renderControls() {
   for (const button of document.querySelectorAll('.tool')) button.setAttribute('aria-pressed', button.dataset.tool === tool);
   stage.dataset.tool = temporarySelection ? 'select' : tool;
   stage.classList.toggle('is-panning', drag?.type === 'pan' || space);
   stage.classList.toggle('rotating-opening', drag?.handle === 'rotate-opening');
   $('#project-name').value = doc().name;
-  $('#dirty-dot').hidden = !dirty();
-  $('[data-action="undo"]').disabled = !undoStack.length;
-  $('[data-action="redo"]').disabled = !redoStack.length;
+  renderEditStatus();
   $('#object-count').textContent = doc().objects.length + ' 個の図形';
   $('#empty-note').hidden = Boolean(doc().objects.length || doc().underlay || tool !== 'select');
   renderContext();
@@ -733,7 +742,7 @@ function drawingClick(event, point) {
       }
     }
   } else if (tool === 'text') {
-    addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, angle: 0 }, '文字を追加しました。');
+    addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, font: defaults.font, angle: 0 }, '文字を追加しました。');
     inspector.querySelector('textarea')?.select();
   } else if (tool === 'opening' || tool === 'fixture') {
     placePart(activeParts[tool], point);
@@ -1366,7 +1375,7 @@ function modifyObject(id, key, value) {
       target.w = value;
       if (wall) positionOpening(target, wall, target.t);
     } else target[key] = value;
-  });
+  }, undefined, state.asset, key === 'value' ? renderTextEdit : renderAll);
 }
 
 document.addEventListener('change', event => {

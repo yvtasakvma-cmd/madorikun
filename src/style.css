@@ -1,3 +1,7 @@
+@font-face { font-family: MadoriGothic; src: url('../assets/NotoSansJP-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriMincho; src: url('../assets/NotoSerifJP-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriMaru; src: url('../assets/ZenMaruGothic-Regular.ttf') format('truetype'); font-display: swap; }
+
 :root {
   font-family: "Inter", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", sans-serif;
   font-size: 14px;
@@ -87,7 +91,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M19 8a8 8 0 1 0 1 8M19 3v6h-6' fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M19 8a8 8 0 1 0 1 8M19 3v6h-6' fill='none' stroke='%23151b17' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair;
 }
 .paper { stroke: #d4ded7; stroke-width: 1; vector-effect: non-scaling-stroke; filter: drop-shadow(0 6px 13px #263b2e17); }
-#scene text { font-family: 'Madori Drawing', 'Meiryo', sans-serif; }
 .canvas-title { pointer-events: none; position: absolute; z-index: 1; top: 18px; left: 19px; display: flex; align-items: center; gap: 7px; padding: 5px 9px; font-size: 11px; color: #53675d; background: #f9fbfa; border: 1px solid #dae4dd; border-radius: 5px; }
 .canvas-indicator { width: 6px; height: 6px; border-radius: 50%; background: #528c76; }
 .zoom-controls { position: absolute; z-index: 2; right: 17px; bottom: 15px; display: flex; align-items: center; gap: 2px; padding: 3px; background: white; border: 1px solid #dbe5de; border-radius: 8px; box-shadow: 0 3px 9px #27493612; }

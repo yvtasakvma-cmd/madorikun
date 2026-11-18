@@ -1,4 +1,4 @@
-import { floors, layers, OPENING_STROKE, parts, roomColors } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, OPENING_STROKE, parts, roomColors, TEXT_FONTS } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -152,6 +152,8 @@ export const numberField = (label, key, value, min, max, step = 1) =>
 export const selectField = (label, key, value, options) =>
   `<label class="field">${label}<select data-field="${key}">${options.map(([id, name]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>`;
 
+export const fontChoices = () => Object.entries(TEXT_FONTS).map(([id, font]) => [id, font.name]);
+
 export const floorChoices = () => Object.entries(floors).map(([id, floor]) => [id, floor.name]);
 
 export const roomChoices = () => Object.entries(roomColors).map(([id, room]) => [id, room.name]);
@@ -182,9 +184,14 @@ export function propertyMarkup(item) {
   }
   if (item.layer === 'color') return selectField('部屋の種別', 'object-room', item.room, roomChoices())
     + colorField('object-fill', item.fill);
-  if (item.layer === 'text') return `<label class="stack-field">文字<textarea data-field="object-value" maxlength="500" rows="3">${escapeHtml(item.value)}</textarea></label>`
-    + numberField('サイズ', 'object-size', item.size, 4, 300)
-    + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
+  if (item.layer === 'text') {
+    const font = item.font ?? DEFAULT_TEXT_FONT;
+    return selectField('書体', 'object-font', font, fontChoices())
+      + `<label class="stack-field">文字<textarea data-field="object-value" style="font-family:${TEXT_FONTS[font].family}, sans-serif"
+          maxlength="500" rows="3">${escapeHtml(item.value)}</textarea></label>`
+      + numberField('サイズ', 'object-size', item.size, 4, 300)
+      + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
+  }
   if (item.layer === 'opening') {
     const stroke = OPENING_STROKE;
     return numberField('幅', 'object-w', item.w, 4, 50000)

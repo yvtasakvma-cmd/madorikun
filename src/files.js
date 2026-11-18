@@ -1,8 +1,12 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, layers, lengthOf, OBJECT_LIMIT, OPENING_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, uid } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, OPENING_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
-import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
+import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
+import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
+import maruUrl from '../assets/ZenMaruGothic-Regular.ttf?url';
+
+const fontUrls = { gothic: gothicUrl, mincho: minchoUrl, maru: maruUrl };
 
 const MB = 1024 * 1024;
 export const UNDERLAY_LIMIT = 50 * MB;
@@ -55,6 +59,7 @@ function validateProject(doc, underlay, assetPath) {
         && number(item.spacing, 3, 150));
     } else if (item.layer === 'text') {
       ensure(point(item.at) && string(item.value, 500) && number(item.size, 4, 300) && number(item.angle));
+      if (item.font !== undefined) ensure(string(item.font, 20) && Object.hasOwn(TEXT_FONTS, item.font), '文字の書体に対応していません。');
     } else {
       ensure(Object.hasOwn(parts, item.kind) && parts[item.kind].layer === item.layer && point(item.at)
         && number(item.angle) && number(item.w, 4, 50000) && number(item.h, 1, 50000)
@@ -288,16 +293,20 @@ export function download(blob, name, extension) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-let fontPromise;
-function outlineFont() {
-  if (!fontPromise) {
-    fontPromise = Promise.all([import('opentype.js'), fetch(fontUrl)])
-      .then(async ([opentype, response]) => {
+const fontPromises = new Map();
+function outlineFont(id) {
+  if (!fontPromises.has(id)) {
+    const pending = Promise.all([import('fontkit'), fetch(fontUrls[id])])
+      .then(async ([fontkit, response]) => {
         ensure(response.ok, '書き出し用フォントを読み込めませんでした。');
-        return opentype.parse(await response.arrayBuffer());
-      }).catch(error => { fontPromise = null; throw error; });
+        return fontkit.create(new Uint8Array(await response.arrayBuffer()));
+      }).catch(error => {
+        fontPromises.delete(id);
+        throw error;
+      });
+    fontPromises.set(id, pending);
   }
-  return fontPromise;
+  return fontPromises.get(id);
 }
 
 function toDataUrl(blob) {
@@ -331,10 +340,11 @@ async function monochromeImage(blob) {
 
 export async function exportSetup(doc, options, image, measuredHost) {
   const { mono, includeUnderlay } = options;
-  const font = doc.layers.find(layer => layer.id === 'text').visible && doc.objects.some(item => item.layer === 'text')
-    ? await outlineFont() : null;
+  const fontIds = doc.layers.find(layer => layer.id === 'text').visible
+    ? new Set(doc.objects.filter(item => item.layer === 'text').map(item => item.font ?? DEFAULT_TEXT_FONT)) : [];
+  const fonts = new Map(await Promise.all(Array.from(fontIds, async id => [id, await outlineFont(id)])));
   const underlayImage = includeUnderlay && image ? await toDataUrl(mono ? await monochromeImage(image) : image) : '';
-  const drawing = renderScene(doc, { mono, showUnderlay: includeUnderlay, underlayImage, font });
+  const drawing = renderScene(doc, { mono, showUnderlay: includeUnderlay, underlayImage, fonts });
   ensure(drawing.trim(), '書き出す図形がありません。表示中のレイヤーを確認してください。');
   measuredHost.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g>' + drawing + '</g></svg>';
   const group = measuredHost.querySelector('g');

@@ -23,6 +23,13 @@ export const roomColors = {
   custom: { name: 'カスタム' },
 };
 
+export const TEXT_FONTS = {
+  gothic: { name: 'ゴシック（Noto Sans JP）', family: 'MadoriGothic' },
+  mincho: { name: '明朝（Noto Serif JP）', family: 'MadoriMincho' },
+  maru: { name: '丸ゴシック（Zen Maru Gothic）', family: 'MadoriMaru' },
+};
+export const DEFAULT_TEXT_FONT = 'gothic';
+
 export const OPENING_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 
 export const parts = {

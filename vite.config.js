@@ -8,6 +8,6 @@ export default defineConfig({
       src: 'node_modules/pdfjs-dist/' + directory + '/*',
       dest: 'pdfjs/' + directory,
       rename: { stripBase: true },
-    })), { src: 'assets/OFL.txt', dest: 'licenses' }],
+    })), { src: 'assets/OFL*.txt', dest: 'licenses', rename: { stripBase: true } }],
   })],
 });
