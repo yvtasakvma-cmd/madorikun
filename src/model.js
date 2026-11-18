@@ -30,7 +30,7 @@ export const TEXT_FONTS = {
 };
 export const DEFAULT_TEXT_FONT = 'gothic';
 
-export const OPENING_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
+export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 
 export const parts = {
   swing: { name: '片開き戸', layer: 'opening', size: [50, 50] },

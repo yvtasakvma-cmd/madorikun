@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, OPENING_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
@@ -66,7 +66,7 @@ function validateProject(doc, underlay, assetPath) {
         && flag(item.flipX) && flag(item.flipY));
       if (item.wallId !== undefined) ensure(item.layer === 'opening' && string(item.wallId, 120) && number(item.t, 0, 1));
       if (item.strokeWidth !== undefined) {
-        ensure(item.layer === 'opening' && number(item.strokeWidth, OPENING_STROKE.min, OPENING_STROKE.max));
+        ensure(number(item.strokeWidth, PART_STROKE.min, PART_STROKE.max));
       }
     }
   }
@@ -353,8 +353,9 @@ export async function exportSetup(doc, options, image, measuredHost) {
   ensure(width || height, '書き出す図形がありません。');
   const stroke = doc.layers.find(layer => layer.id === 'wall').visible
     ? doc.objects.reduce((max, item) => item.layer === 'wall' ? Math.max(max, item.width) : max, 0) : 0;
-  const partStroke = doc.layers.find(layer => layer.id === 'opening').visible
-    ? doc.objects.reduce((max, item) => item.layer === 'opening' ? Math.max(max, item.strokeWidth ?? 0) : max, 0) : 0;
+  const visibleLayers = new Set(doc.layers.filter(layer => layer.visible).map(layer => layer.id));
+  const partStroke = doc.objects.reduce((max, item) =>
+    (item.layer === 'opening' || item.layer === 'fixture') && visibleLayers.has(item.layer) ? Math.max(max, item.strokeWidth ?? 0) : max, 0);
   const pad = options.margin + Math.max(3, stroke / 2, partStroke / 2);
   const box = { x: x - pad, y: y - pad, width: width + pad * 2, height: height + pad * 2 };
   return { drawing, box };

@@ -84,12 +84,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #stage[data-tool="select"] .move-group-handle { pointer-events: all; cursor: move; }
 #stage[data-tool="select"] :is([data-handle="e"], [data-handle="w"]) { cursor: ew-resize; }
 #stage[data-tool="select"] :is([data-handle="n"], [data-handle="s"]) { cursor: ns-resize; }
-#stage .opening-rotation-handle { fill: transparent; stroke: none; pointer-events: none; }
-#stage[data-tool="select"] .opening-rotation-handle { pointer-events: all; }
-#stage[data-tool="select"] .opening-rotation-handle:hover { fill: #157f691a; }
-#stage[data-tool="select"] .opening-rotation-handle, #stage.rotating-opening, #stage.rotating-opening * {
+#stage .part-rotation-handle { fill: transparent; stroke: none; pointer-events: none; }
+#stage[data-tool="select"] .part-rotation-handle { pointer-events: all; }
+#stage[data-tool="select"] .part-rotation-handle:hover { fill: #157f691a; }
+#stage[data-tool="select"] .part-rotation-handle, #stage.rotating-part, #stage.rotating-part * {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M19 8a8 8 0 1 0 1 8M19 3v6h-6' fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M19 8a8 8 0 1 0 1 8M19 3v6h-6' fill='none' stroke='%23151b17' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair;
 }
+#stage[data-tool="select"] :is([data-handle="fixture-nw"], [data-handle="fixture-se"]) { cursor: nwse-resize; }
+#stage[data-tool="select"] :is([data-handle="fixture-ne"], [data-handle="fixture-sw"]) { cursor: nesw-resize; }
 .paper { stroke: #d4ded7; stroke-width: 1; vector-effect: non-scaling-stroke; filter: drop-shadow(0 6px 13px #263b2e17); }
 .canvas-title { pointer-events: none; position: absolute; z-index: 1; top: 18px; left: 19px; display: flex; align-items: center; gap: 7px; padding: 5px 9px; font-size: 11px; color: #53675d; background: #f9fbfa; border: 1px solid #dae4dd; border-radius: 5px; }
 .canvas-indicator { width: 6px; height: 6px; border-radius: 50%; background: #528c76; }
@@ -124,8 +126,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inspector-placeholder { margin: 0; padding: 10px; border: 1px dashed #e1e9e3; border-radius: 6px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .inspector-name { display: block; overflow-wrap: anywhere; font-weight: 650; font-size: 12px; }
 .property-actions { display: flex; gap: 4px; }
-.opening-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.opening-actions .button { padding: 0 4px; font-size: 12px; gap: 4px; }
+.part-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.part-actions .button { padding: 0 4px; font-size: 12px; gap: 4px; }
 .statusbar { justify-content: space-between; padding: 0 18px; gap: 8px; border-top: 1px solid var(--line); color: #54695e; font-size: 11px; }
 #status { display: flex; align-items: center; gap: 7px; min-width: 0; }
 #status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #5c9878; }

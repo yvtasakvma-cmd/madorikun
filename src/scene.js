@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, lengthOf, OPENING_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, lengthOf, PART_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -7,11 +7,10 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = OPENING_STROKE.defaultWidth) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = PART_STROKE.defaultWidth) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
-  const water = mono ? '#ffffff' : '#c8e8f3';
   const rect = (a, b, width, height, fill = 'none', radius = 0) =>
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
@@ -36,23 +35,23 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         + line(-w * 0.12, frameDepth / 5, -x, frameDepth / 5);
       break;
     case 'bath':
-      body = rect(x, y, w, h, water, Math.min(w, h) * 0.06)
+      body = rect(x, y, w, h, 'none', Math.min(w, h) * 0.06)
         + rect(x + w * 0.12, y + h * 0.09, w * 0.76, h * 0.82, 'none', Math.min(w, h) * 0.19)
         + circle(0, h * 0.32, w * 0.025);
       break;
     case 'basin':
-      body = rect(x, y, w, h, water, 2)
+      body = rect(x, y, w, h, 'none', 2)
         + `<ellipse cy="${h * 0.05}" rx="${w * 0.35}" ry="${h * 0.31}"/>`
         + circle(0, -h * 0.35, Math.min(w, h) * 0.05);
       break;
     case 'toilet':
-      body = rect(w * -0.36, y, w * 0.72, h * 0.25, water, 2)
-        + `<ellipse cy="${h * 0.12}" rx="${w * 0.38}" ry="${h * 0.36}" fill="${water}"/>
-           <ellipse cy="${h * 0.13}" rx="${w * 0.25}" ry="${h * 0.25}" fill="#ffffff"/>`;
+      body = rect(w * -0.36, y, w * 0.72, h * 0.25, 'none', 2)
+        + `<ellipse cy="${h * 0.12}" rx="${w * 0.38}" ry="${h * 0.36}"/>
+           <ellipse cy="${h * 0.13}" rx="${w * 0.25}" ry="${h * 0.25}"/>`;
       break;
     case 'kitchen': {
       const ring = Math.min(w * 0.043, h * 0.13);
-      body = rect(x, y, w, h, water)
+      body = rect(x, y, w, h)
         + rect(w * -0.43, h * -0.35, w * 0.37, h * 0.7, 'none', Math.min(w, h) * 0.09)
         + line(w * 0.12, y, w * 0.12, -y)
         + circle(w * 0.26, h * -0.19, ring) + circle(w * 0.4, h * 0.17, ring)
@@ -60,12 +59,12 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     }
     case 'washer':
-      body = rect(x, y, w, h, water, 2) + circle(0, h * 0.07, Math.min(w, h) * 0.29)
+      body = rect(x, y, w, h, 'none', 2) + circle(0, h * 0.07, Math.min(w, h) * 0.29)
         + line(x, y + h * 0.19, -x, y + h * 0.19);
       break;
     case 'compass':
       body = circle(0, 3, Math.min(w, h) * 0.48)
-        + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z" fill="${stroke}"/>`;
+        + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z"/>`;
       break;
   }
   return `<g fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
@@ -276,8 +275,10 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         drawing = textDrawing(item, color, halo, fonts);
       } else {
         const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
+        const hit = entries && item.layer === 'fixture'
+          ? `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" fill="transparent"/>` : '';
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };

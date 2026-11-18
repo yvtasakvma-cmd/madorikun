@@ -169,10 +169,8 @@ function renderContext() {
     + colorField('default-color', defaults.color);
   if (tool === 'text') controls = selectField('書体', 'default-font', defaults.font, fontChoices())
     + numberField('サイズ', 'default-size', defaults.size, 4, 300);
-  if (tool === 'opening' || tool === 'fixture') controls = partPalette(tool, activeParts[tool])
-    + (tool === 'opening'
-      ? '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>'
-      : '<span class="context-hint">パーツをキャンバスへドラッグ</span>');
+  if (Object.hasOwn(activeParts, tool)) controls = partPalette(tool, activeParts[tool])
+    + '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>';
   if (tool === 'underlay') controls = importButton() + (doc().underlay
     ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
     : '<span class="context-hint">PDF・PNG・JPEG・WebPをキャンバスへドロップできます</span>');
@@ -240,7 +238,7 @@ function renderControls() {
   for (const button of document.querySelectorAll('.tool')) button.setAttribute('aria-pressed', button.dataset.tool === tool);
   stage.dataset.tool = temporarySelection ? 'select' : tool;
   stage.classList.toggle('is-panning', drag?.type === 'pan' || space);
-  stage.classList.toggle('rotating-opening', drag?.handle === 'rotate-opening');
+  stage.classList.toggle('rotating-part', drag?.handle === 'rotate-part');
   $('#project-name').value = doc().name;
   renderEditStatus();
   $('#object-count').textContent = doc().objects.length + ' 個の図形';
@@ -305,7 +303,8 @@ function boundsOf(items) {
   return polygonBounds(items.flatMap(item => corners(objectBounds(item))));
 }
 
-function openingRotationBox(item) {
+function partRotationBox(item) {
+  if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
   const halfFrame = (itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10)) / 2;
   const swingDepth = item.kind === 'swing' ? item.w
     : item.kind === 'double' ? item.w / 2 : item.kind === 'folding' ? item.h : 0;
@@ -346,21 +345,24 @@ function handlesMarkup(items) {
     const box = boundsOf(items);
     draw = (box.width > 0.01 && box.height > 0.01 ? selectionEdges(box) : edge(item.a, item.b))
       + handle(item.a, 'wall-a') + handle(item.b, 'wall-b');
-  } else if (items.length === 1 && items[0].layer === 'opening') {
+  } else if (items.length === 1 && Object.hasOwn(activeParts, items[0].layer)) {
     const item = items[0];
     const worldPoint = point => add(item.at, rotate(point, item.angle));
     const left = worldPoint([-item.w / 2, 0]);
     const right = worldPoint([item.w / 2, 0]);
-    const local = corners(openingRotationBox(item));
+    const local = corners(partRotationBox(item));
     const outline = local.map(worldPoint);
     const rotationHandles = local.map(([x, y], i) => {
       const [sx, sy] = DIRECTIONS[HANDLES[i]];
       const [cx, cy] = worldPoint([x + sx * 6 / view.scale, y + sy * 6 / view.scale]);
-      return `<circle class="opening-rotation-handle" data-handle="rotate-opening"
+      return `<circle class="part-rotation-handle" data-handle="rotate-part"
         cx="${cx}" cy="${cy}" r="${9 / view.scale}"/>`;
     }).join('');
     draw = outline.map((point, i) => edge(point, outline[(i + 1) % 4], `${4 / view.scale} ${3 / view.scale}`)).join('')
-      + rotationHandles + handle(left, 'part-left') + handle(right, 'part-right');
+      + rotationHandles;
+    draw += item.layer === 'opening'
+      ? handle(left, 'part-left') + handle(right, 'part-right')
+      : outline.map((point, i) => handle(point, 'fixture-' + HANDLES[i])).join('');
   } else if (items.length) {
     const box = boundsOf(items);
     draw = selectionEdges(box) + corners(box).map((point, i) => handle(point, HANDLES[i])).join('');
@@ -452,7 +454,7 @@ function marqueeMarkup({ bounds }) {
 function draw() {
   drawFrame = 0;
   stage.classList.toggle('part-placement-cursor',
-    tool === 'opening' && draftPart?.layer === 'opening' && !temporarySelection && !drag && !draggedKind);
+    Object.hasOwn(activeParts, tool) && draftPart?.layer === tool && !temporarySelection && !drag && !draggedKind);
   const wall = !temporarySelection && tool === 'wall' && pending.length && hover
     ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
   let graph = doc();
@@ -671,7 +673,7 @@ function partAt(kind, point) {
 function placePart(kind, point) {
   if (!Object.hasOwn(parts, kind)) return;
   const part = partAt(kind, point);
-  if (addItem(part, parts[kind].name + 'を配置しました。') && part.layer === 'opening') {
+  if (addItem(part, parts[kind].name + 'を配置しました。')) {
     tool = 'select';
     clearDraft();
     renderAll();
@@ -744,7 +746,7 @@ function drawingClick(event, point) {
   } else if (tool === 'text') {
     addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, font: defaults.font, angle: 0 }, '文字を追加しました。');
     inspector.querySelector('textarea')?.select();
-  } else if (tool === 'opening' || tool === 'fixture') {
+  } else if (Object.hasOwn(activeParts, tool)) {
     placePart(activeParts[tool], point);
   }
   scheduleDraw();
@@ -775,7 +777,7 @@ function beginDrag(event, type, data = {}) {
   const screen = screenPoint(event);
   drag = { type, pointer: event.pointerId, start: toWorld(screen), screen, before: state, moved: false, ...data };
   stage.classList.toggle('is-panning', type === 'pan');
-  stage.classList.toggle('rotating-opening', data.handle === 'rotate-opening');
+  stage.classList.toggle('rotating-part', data.handle === 'rotate-part');
 }
 
 function cancelDrag() {
@@ -955,7 +957,7 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
   for (const id of walls) syncOpenings(graph, id);
 }
 
-function rotateOpening(item, from, to, free) {
+function rotatePart(item, from, to, free) {
   if (lengthOf(item.at, to) < 0.001) return false;
   const raw = item.angle + angleOf(item.at, to) - angleOf(item.at, from);
   const angle = free ? raw : 45 * Math.round(raw / 45);
@@ -964,6 +966,22 @@ function rotateOpening(item, from, to, free) {
   detach(item);
   item.angle = (angle % 360 + 360) % 360;
   return true;
+}
+
+function resizeFixture(item, corner, from, to, proportional) {
+  const [signX, signY] = DIRECTIONS[corner];
+  const [dx, dy] = rotate(sub(to, from), -item.angle);
+  let w = clamp(item.w + signX * dx, 4, 50000);
+  let h = clamp(item.h + signY * dy, 1, 50000);
+  if (proportional) {
+    const progress = 1 + (signX * item.w * dx + signY * item.h * dy) / (item.w ** 2 + item.h ** 2);
+    const scale = clamp(progress, Math.max(4 / item.w, 1 / item.h), Math.min(50000 / item.w, 50000 / item.h));
+    w = item.w * scale;
+    h = item.h * scale;
+  }
+  item.at = add(item.at, rotate([signX * (w - item.w) / 2, signY * (h - item.h) / 2], item.angle));
+  item.w = w;
+  item.h = h;
 }
 
 function handleDrag(graph, current, point, proportional) {
@@ -983,9 +1001,10 @@ function handleDrag(graph, current, point, proportional) {
     const snapped = snapWallPoint(point, { excluded: chosen, origin: other, free: proportional });
     if (lengthOf(snapped, other) >= 1) item[endpoint] = snapped;
     syncOpenings(graph, item.id);
-  } else if (handle === 'rotate-opening') {
-    current.rotationChanged = rotateOpening(item, current.start, point, proportional);
+  } else if (handle === 'rotate-part') {
+    current.rotationChanged = rotatePart(item, current.start, point, proportional);
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
+  else if (handle.startsWith('fixture-')) resizeFixture(item, handle.slice(8), current.start, point, proportional);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
   else resizeGroup(graph, items, handle, current.start, point, proportional);
 }
@@ -1026,7 +1045,7 @@ function updateDrag(event, proportional = event.shiftKey) {
 let queuedMove = 0;
 let latestMove;
 function updateRotationModifier(free) {
-  if (drag?.handle !== 'rotate-opening') return;
+  if (drag?.handle !== 'rotate-part') return;
   const event = queuedMove ? latestMove : drag.lastPointer;
   if (!event) return;
   if (queuedMove) {
@@ -1043,8 +1062,8 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if (tool === 'opening' && editable('opening') && !fileBusy) {
-    draftPart = partAt(activeParts.opening, toWorld(screenPoint(event)));
+  } else if (Object.hasOwn(activeParts, tool) && editable(tool) && !fileBusy) {
+    draftPart = partAt(activeParts[tool], toWorld(screenPoint(event)));
     scheduleDraw();
   } else if (pending.length || (tool === 'wall' && editable('wall'))) {
     updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
@@ -1092,7 +1111,7 @@ stage.addEventListener('pointerup', event => {
   if (current.type === 'marquee') {
     finishMarquee(current, event.shiftKey);
   } else if (current.type !== 'pan' && current.moved
-    && (current.handle !== 'rotate-opening' || current.rotationChanged)) {
+    && (current.handle !== 'rotate-part' || current.rotationChanged)) {
     record(current.before);
     status(current.duplicate ? '図形を複製しました。' : '図形を更新しました。');
   }
@@ -1320,14 +1339,13 @@ function runAction(action, source) {
   else if (action === 'zoom-in') zoom(1.25);
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
-  else if (['flip-x', 'flip-y', 'rotate'].includes(action)) {
+  else if (['flip-x', 'flip-y'].includes(action)) {
     const item = selectedObjects()[0];
     if (!item?.kind || !canEditItem(item)) return;
     commit(graph => {
       const target = graph.objects.find(object => object.id === item.id);
       if (action === 'flip-x') target.flipX = !target.flipX;
-      else if (action === 'flip-y') target.flipY = !target.flipY;
-      else if (!target.wallId) target.angle = (target.angle + 90) % 360;
+      else target.flipY = !target.flipY;
     }, 'パーツの向きを変更しました。');
   }
 }

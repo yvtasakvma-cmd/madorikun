@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, floors, layers, OPENING_STROKE, parts, roomColors, TEXT_FONTS } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, PART_STROKE, parts, roomColors, TEXT_FONTS } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -29,7 +29,6 @@ const icons = {
   help: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.5 9a2.6 2.6 0 0 1 5 1c0 1.6-2.5 2-2.5 4m0 3h.1',
   trash: 'M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7',
   flip: 'M12 3v18M9 6l-6 11h6zm6 0 6 11h-6z',
-  rotate: 'M19 4v5h-5M19 9a8 8 0 1 0 1 6',
   upload: 'M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5',
   check: 'm4 12 5 5L20 6',
   grid: 'M4 4h16v16H4zM4 12h16M12 4v16',
@@ -130,7 +129,7 @@ export function layout() {
       <dl class="shortcut-list">
         <dt>Alt ＋ ドラッグ</dt><dd>選択した図形を複製して移動</dd>
         <dt>Shift ＋ 角をドラッグ</dt><dd>縦横比を保って拡大・縮小</dd>
-        <dt>窓・扉の角の外をドラッグ</dt><dd>45°刻みで回転。Shiftで自由に回転</dd>
+        <dt>窓・扉・設備の角の外をドラッグ</dt><dd>45°刻みで回転。Shiftで自由に回転</dd>
         <dt>Shift ＋ 範囲をドラッグ</dt><dd>囲んだ図形を選択に追加</dd>
         <dt>Shift ＋ クリック</dt><dd>作図時は自由な角度、選択時は図形を追加</dd>
         <dt>Ctrl ＋ クリック</dt><dd>一時的に選択。壁の連続描画中は終了</dd>
@@ -192,20 +191,15 @@ export function propertyMarkup(item) {
       + numberField('サイズ', 'object-size', item.size, 4, 300)
       + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
   }
-  if (item.layer === 'opening') {
-    const stroke = OPENING_STROKE;
-    return numberField('幅', 'object-w', item.w, 4, 50000)
-      + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? stroke.defaultWidth, stroke.min, stroke.max, 0.01)
-      + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
-        <div class="property-actions opening-actions">
-          ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}
-          ${button('flip-y', 'flip', '上下反転', 'button bordered compact')}
-        </div>`;
-  }
+  const stroke = PART_STROKE;
   return numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
-    + (!item.wallId ? numberField('回転（°）', 'object-angle', item.angle, -360, 360) : '')
-    + `<div class="property-actions">${iconButton('flip-x', 'flip', '左右反転')}${iconButton('flip-y', 'flip', '上下反転')}${!item.wallId ? iconButton('rotate', 'rotate', '90度回転') : ''}</div>`;
+    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? stroke.defaultWidth, stroke.min, stroke.max, 0.01)
+    + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
+      <div class="property-actions part-actions">
+        ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}
+        ${button('flip-y', 'flip', '上下反転', 'button bordered compact')}
+      </div>`;
 }
 
 export const removeButton = () => button('delete', 'trash', '削除', 'button danger quiet');
