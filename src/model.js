@@ -173,6 +173,8 @@ export function syncOpenings(doc, wallId) {
   }
 }
 
+export const wallDashArray = width => `${width * 2} ${width * 1.25}`;
+
 export function wallDirection(wall) {
   if (wall.a[1] === wall.b[1]) return 0;
   if (wall.a[0] === wall.b[0]) return 1;

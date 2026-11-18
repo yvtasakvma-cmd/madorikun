@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments } from './model.js';
 import { washerLabel } from './washer-label.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
@@ -311,7 +311,8 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'wall') {
         const segments = geometry.get(item.id).segments;
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
-        drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}">${drawing}</g>`;
+        const dash = item.dashed ? ` stroke-dasharray="${wallDashArray(item.width)}"` : '';
+        drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}"${dash}>${drawing}</g>`;
       } else if (item.layer === 'text') {
         const surface = fills.findLast(fill => pointInPolygon(item.at, fill.points));
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';

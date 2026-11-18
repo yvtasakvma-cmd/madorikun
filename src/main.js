@@ -1,7 +1,7 @@
 import './style.css';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, positionOpening, roomColors,
-  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
+  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, wallDrawingGeometry,
@@ -10,7 +10,7 @@ import {
   detectImageFormat, download, exportSetup, makeExport, readProject, renderUnderlay, saveProject, UNDERLAY_LIMIT,
 } from './files.js';
 import {
-  colorField, floorChoices, fontChoices, icon, importButton, layout, numberField, partPalette,
+  checkField, colorField, floorChoices, fontChoices, icon, importButton, layout, numberField, partPalette,
   propertyMarkup, removeButton, roomChoices, selectField, partDesignChoices, tools,
 } from './ui.js';
 
@@ -34,7 +34,7 @@ const undoStack = [];
 const redoStack = [];
 let tool = 'select';
 const selection = new Set();
-let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
+let defaults = { width: 8, dashed: false, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
 const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, design]) => [kind, design.default]));
 let pending = [];
@@ -160,7 +160,8 @@ function fieldInstructions() {
 function renderContext() {
   const title = tools.find(item => item.id === tool).name;
   let controls = '';
-  if (tool === 'wall') controls = numberField('太さ', 'default-width', defaults.width, 1, 80);
+  if (tool === 'wall') controls = numberField('太さ', 'default-width', defaults.width, 1, 80)
+    + checkField('破線', 'default-dashed', defaults.dashed);
   if (tool === 'floor') {
     const { pattern } = floors[defaults.preset];
     controls = selectField('種類', 'default-preset', defaults.preset, floorChoices());
@@ -218,8 +219,13 @@ function renderInspector() {
   } else if (items.length > 1) {
     const walls = editableSelection().filter(item => item.layer === 'wall');
     const width = walls.length && walls.every(wall => wall.width === walls[0].width) ? walls[0].width : null;
+    const dashed = walls.every(wall => wall.dashed);
     inspector.innerHTML = `<p class="inspector-placeholder">${items.length}個の図形を選択中</p>`
-      + (walls.length ? numberField('壁の太さ', 'selected-wallWidth', width, 1, 80) : '') + removeButton();
+      + (walls.length ? numberField('壁の太さ', 'selected-wallWidth', width, 1, 80)
+        + checkField('破線', 'selected-wallDashed', dashed, !dashed && walls.some(wall => wall.dashed)) : '')
+      + removeButton();
+    const mixed = inspector.querySelector('[data-mixed]');
+    if (mixed) mixed.indeterminate = true;
   } else {
     inspector.innerHTML = '<p class="inspector-placeholder">図形を選ぶと、ここに設定が表示されます。</p>';
   }
@@ -400,7 +406,8 @@ function draftMarkup(wall) {
     const points = hover ? [...vertices, wall?.end ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
-      stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
+      stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}"
+      ${tool === 'wall' && defaults.dashed ? `stroke-dasharray="${wallDashArray(defaults.width)}"` : ''} opacity=".8"/>`;
     for (const [x, y] of vertices) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
     if (closing) markup += snapMarker(vertices[0], 'closing-target');
     if (wall?.target) markup += snapMarker(wall.target, 'wall-snap-target');
@@ -731,7 +738,9 @@ function drawingClick(event, point) {
       updateDraftHover(point, event.shiftKey);
     } else {
       const { start, end, adjustment } = wallDraft(point, event.shiftKey, hover?.wallTarget);
-      const wall = { id: uid(), layer: 'wall', wallGroup: wallChain.groupId, a: start, b: end, width: defaults.width };
+      const wall = {
+        id: uid(), layer: 'wall', wallGroup: wallChain.groupId, a: start, b: end, width: defaults.width, dashed: defaults.dashed,
+      };
       if (lengthOf(start, end) >= 1 && addItem(wall, '壁を追加しました。', adjustment)) {
         pending = [end];
         hover = null;
@@ -1407,6 +1416,7 @@ document.addEventListener('click', event => {
 });
 
 function fieldValue(input) {
+  if (input.type === 'checkbox') return input.checked;
   if (input.type !== 'number') return input.value;
   return Number.isFinite(input.valueAsNumber) ? clamp(input.valueAsNumber, Number(input.min), Number(input.max)) : null;
 }
@@ -1454,11 +1464,12 @@ document.addEventListener('change', event => {
     if (key === 'color') defaults.room = 'custom';
     renderContext();
     scheduleDraw();
-  } else if (group === 'selected' && key === 'wallWidth') {
+  } else if (group === 'selected' && (key === 'wallWidth' || key === 'wallDashed')) {
     const walls = new Set(editableSelection().filter(item => item.layer === 'wall').map(item => item.id));
+    const property = key === 'wallWidth' ? 'width' : 'dashed';
     if (walls.size) commit(graph => {
-      for (const item of graph.objects) if (walls.has(item.id)) item.width = value;
-    }, '選択した壁の太さを変更しました。');
+      for (const item of graph.objects) if (walls.has(item.id)) item[property] = value;
+    }, key === 'wallWidth' ? '選択した壁の太さを変更しました。' : '選択した壁の線種を変更しました。');
   } else if (group === 'object') {
     const item = selectedObjects()[0];
     if (item && canEditItem(item)) modifyObject(item.id, key, value);

@@ -158,6 +158,10 @@ export const floorChoices = () => Object.entries(floors).map(([id, floor]) => [i
 
 export const roomChoices = () => Object.entries(roomColors).map(([id, room]) => [id, room.name]);
 
+export const checkField = (label, key, checked, mixed = false) =>
+  `<label class="check-field"><input type="checkbox" data-field="${key}" ${checked ? 'checked' : ''}
+    ${mixed ? 'data-mixed' : ''}>${label}</label>`;
+
 export const colorField = (key, fill) => `<label class="field color-field">塗り色<input type="color" value="${fill}" data-field="${key}"></label>`;
 
 function partIcon(id, variant) {
@@ -188,7 +192,8 @@ export function partDesignChoices(kind, current) {
 }
 
 export function propertyMarkup(item) {
-  if (item.layer === 'wall') return numberField('太さ', 'object-width', item.width, 1, 80);
+  if (item.layer === 'wall') return numberField('太さ', 'object-width', item.width, 1, 80)
+    + checkField('破線', 'object-dashed', item.dashed);
   if (item.layer === 'floor') {
     const pattern = floors[item.preset].pattern;
     return selectField('種類', 'object-preset', item.preset, floorChoices())
