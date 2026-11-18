@@ -39,6 +39,9 @@ function validateProject(doc, underlay, assetPath) {
   for (const item of doc.objects) {
     ensure(item && string(item.id, 120) && item.id.length && item.id !== 'underlay' && !ids.has(item.id));
     ids.set(item.id, item);
+    if (item.wallGroup !== undefined) {
+      ensure(item.layer === 'wall' && string(item.wallGroup, 120) && item.wallGroup.length > 0);
+    }
     if (item.layer === 'wall') {
       ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
     } else if (item.layer === 'floor' || item.layer === 'color') {

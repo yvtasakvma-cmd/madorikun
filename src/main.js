@@ -216,7 +216,7 @@ function renderInspector() {
     inspector.innerHTML = (item.kind ? `<span class="inspector-name">${parts[item.kind].name}</span>` : '')
       + propertyMarkup(item) + removeButton();
   } else if (items.length > 1) {
-    const walls = items.filter(item => item.layer === 'wall' && canEditItem(item));
+    const walls = editableSelection().filter(item => item.layer === 'wall');
     const width = walls.length && walls.every(wall => wall.width === walls[0].width) ? walls[0].width : null;
     inspector.innerHTML = `<p class="inspector-placeholder">${items.length}個の図形を選択中</p>`
       + (walls.length ? numberField('壁の太さ', 'selected-wallWidth', width, 1, 80) : '') + removeButton();
@@ -336,6 +336,15 @@ function handlesMarkup(items) {
   } else if (items.length) {
     const box = boundsOf(items);
     draw = selectionEdges(box) + corners(box).map((point, i) => handle(point, HANDLES[i])).join('');
+    if (items.length > 1 && items.some(item => item.wallGroup)) {
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      draw += `<g transform="translate(${x} ${y}) scale(${1 / view.scale})">
+        <circle class="move-group-handle" data-handle="move-group" r="8" fill="#ffffff" stroke-width="1.25"/>
+        <path d="M-4 0H4 M-2-2l-2 2 2 2 M2-2l2 2-2 2 M0-4V4 M-2-2l2-2 2 2 M-2 2l2 2 2-2"
+          stroke-width="1.15" stroke-linecap="round" pointer-events="none"/>
+        </g>`;
+    }
     if (items.length === 1 && items[0].points) {
       draw += items[0].points.map((point, i) => handle(point, 'vertex-' + i)).join('');
     }
@@ -443,6 +452,32 @@ function renderAll() {
 function canEditItem(item) {
   if (!editable(item.layer)) return false;
   return item.layer !== 'wall' || !layer('opening').locked || !doc().objects.some(part => part.wallId === item.id);
+}
+
+function groupWalls(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.wallGroup) continue;
+    if (!groups.has(item.wallGroup)) groups.set(item.wallGroup, []);
+    groups.get(item.wallGroup).push(item);
+  }
+  return groups;
+}
+
+function selectableMembers(item, groups) {
+  const members = item.wallGroup ? groups.get(item.wallGroup) : [item];
+  return members.every(canEditItem) ? members : [];
+}
+
+function editableSelection() {
+  const objects = doc().objects;
+  const groups = groupWalls(objects);
+  const eligible = new Map();
+  return selectedObjects().filter(item => {
+    const key = item.wallGroup ?? item;
+    if (!eligible.has(key)) eligible.set(key, selectableMembers(item, groups).length > 0);
+    return eligible.get(key);
+  });
 }
 
 function nearestWallEndpoint(point, { radius, excluded, accepts }) {
@@ -654,14 +689,14 @@ function drawingClick(event, point) {
     if (!pending.length) {
       const target = wallSnapTarget(point, hover?.wallTarget);
       pending = [target ? [...target] : point];
-      wallChain = { first: pending[0] };
+      wallChain = { first: pending[0], groupId: uid() };
       hover = null;
     } else if (wallChain.lastClick && Math.min(lengthOf(point, pending[0]), lengthOf(point, wallChain.lastClick)) * view.scale <= 6) {
       finishWallChain();
       updateDraftHover(point, event.shiftKey);
     } else {
       const { start, end, adjustment } = wallDraft(point, event.shiftKey, hover?.wallTarget);
-      const wall = { id: uid(), layer: 'wall', a: start, b: end, width: defaults.width };
+      const wall = { id: uid(), layer: 'wall', wallGroup: wallChain.groupId, a: start, b: end, width: defaults.width };
       if (lengthOf(start, end) >= 1 && addItem(wall, '壁を追加しました。', adjustment)) {
         pending = [end];
         hover = null;
@@ -688,8 +723,14 @@ function drawingClick(event, point) {
 }
 
 function finishWallChain() {
+  const tail = itemBy(wallChain?.tailId);
+  if (tail) {
+    const members = selectableMembers(tail, groupWalls(doc().objects));
+    selection.clear();
+    for (const member of members) selection.add(member.id);
+  }
   clearDraft();
-  scheduleDraw();
+  renderAll();
   status('壁の連続描画を終了しました。');
 }
 
@@ -741,26 +782,40 @@ stage.addEventListener('pointerdown', event => {
   }
   const handle = !endedWall && ['select', 'underlay', 'opening', 'fixture'].includes(pointerTool)
     ? event.target.closest('[data-handle]')?.dataset.handle : null;
-  const hit = event.target.closest('[data-id]')?.dataset.id;
-  if (handle) {
+  const throughEdge = EDGE_HANDLES.includes(handle) && (event.shiftKey || event.altKey);
+  const hitTarget = throughEdge
+    ? document.elementsFromPoint(event.clientX, event.clientY).map(node => node.closest('[data-id]')).find(Boolean)
+    : event.target.closest('[data-id]');
+  const hit = hitTarget?.dataset.id;
+  if (handle && !throughEdge) {
     const items = selectedObjects();
-    if (items.every(canEditItem)) beginDrag(event, 'handle', { handle, ids: [...selection] });
+    if (items.every(canEditItem)) {
+      if (handle === 'move-group') beginDrag(event, 'move', { ids: [...selection], duplicate: event.altKey });
+      else beginDrag(event, 'handle', { handle, ids: [...selection] });
+    }
     return;
   }
   if (pointerTool === 'underlay' || pointerTool === 'select') {
     const clicked = itemBy(hit);
-    if (pointerTool === 'select' && (!clicked || !canEditItem(clicked))) {
+    const members = clicked && pointerTool === 'select' ? selectableMembers(clicked, groupWalls(doc().objects)) : [];
+    if (pointerTool === 'select' && !members.length) {
       beginDrag(event, 'marquee', { clicked, underlay: hit === 'underlay' && editable('underlay') });
       return;
     }
     if (hit === 'underlay' && !editable('underlay')) return;
     if (clicked && (!canEditItem(clicked) || pointerTool === 'underlay')) return;
     if (!event.shiftKey && (!hit || !selection.has(hit))) selection.clear();
-    if (hit && event.shiftKey && selection.has(hit)) selection.delete(hit);
-    else if (hit) {
-      if (hit === 'underlay') selection.clear();
-      else selection.delete('underlay');
-      selection.add(hit);
+    if (hit === 'underlay') {
+      const deselect = event.shiftKey && selection.has(hit);
+      selection.clear();
+      if (!deselect) selection.add(hit);
+    } else if (members.length) {
+      if (event.shiftKey && members.every(item => selection.has(item.id))) {
+        for (const item of members) selection.delete(item.id);
+      } else {
+        selection.delete('underlay');
+        for (const item of members) selection.add(item.id);
+      }
     }
     renderAll();
     if (hit && selection.has(hit) && !event.shiftKey && selectedObjects().every(canEditItem)) {
@@ -784,6 +839,10 @@ function moveItems(copy, current, delta) {
     items = items.map(source => {
       const item = structuredClone(source);
       item.id = current.copyIds.get(source.id);
+      if (item.wallGroup) {
+        if (!current.copyWallGroups.has(item.wallGroup)) current.copyWallGroups.set(item.wallGroup, uid());
+        item.wallGroup = current.copyWallGroups.get(item.wallGroup);
+      }
       if (item.wallId) {
         if (chosen.has(item.wallId)) item.wallId = current.copyIds.get(item.wallId);
         else detach(item);
@@ -911,6 +970,7 @@ function updateDrag(event) {
   const graph = structuredClone(current.before.doc);
   if (current.type === 'move') {
     current.copyIds ??= new Map();
+    current.copyWallGroups ??= new Map();
     if (current.duplicate && graph.objects.length + current.ids.length > OBJECT_LIMIT) {
       current.moved = false;
       return;
@@ -955,11 +1015,14 @@ function finishMarquee(current, addToSelection) {
 
   if (!addToSelection) selection.clear();
   selection.delete('underlay');
-  const geometry = wallDrawingGeometry(doc().objects);
-  for (const item of doc().objects) {
-    if (objectIntersectsBox(item, current.bounds, geometry.get(item.id)?.segments) && canEditItem(item)) {
-      selection.add(item.id);
-    }
+  const items = doc().objects;
+  const geometry = wallDrawingGeometry(items);
+  const groups = groupWalls(items);
+  const checkedGroups = new Set();
+  for (const item of items) {
+    if (checkedGroups.has(item.wallGroup) || !objectIntersectsBox(item, current.bounds, geometry.get(item.id)?.segments)) continue;
+    if (item.wallGroup) checkedGroups.add(item.wallGroup);
+    for (const member of selectableMembers(item, groups)) selection.add(member.id);
   }
   status(selection.size ? selection.size + '個の図形を選択しました。' : '選択を解除しました。');
 }
@@ -991,7 +1054,7 @@ stage.addEventListener('wheel', event => {
 }, { passive: false });
 
 function removeSelection() {
-  const ids = new Set(selectedObjects().filter(canEditItem).map(item => item.id));
+  const ids = new Set(editableSelection().map(item => item.id));
   const underlay = Boolean(doc().underlay && editable('underlay') && (selection.has('underlay') || tool === 'underlay'));
   if (!ids.size && !underlay) return;
   selection.clear();
@@ -1284,7 +1347,7 @@ document.addEventListener('change', event => {
     renderContext();
     scheduleDraw();
   } else if (group === 'selected' && key === 'wallWidth') {
-    const walls = new Set(selectedObjects().filter(item => item.layer === 'wall' && canEditItem(item)).map(item => item.id));
+    const walls = new Set(editableSelection().filter(item => item.layer === 'wall').map(item => item.id));
     if (walls.size) commit(graph => {
       for (const item of graph.objects) if (walls.has(item.id)) item.width = value;
     }, '選択した壁の太さを変更しました。');
