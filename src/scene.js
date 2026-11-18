@@ -46,12 +46,16 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       body = frame + `<path d="M${x} 0l${w / 5} ${-h} ${w / 5} ${h} ${w / 5} ${-h} ${w / 5} ${h}"/>`;
       break;
     case 'window':
-      body = frame + line(x, 0, -x, 0) + line(0, -frameDepth / 2, 0, frameDepth / 2);
+    case 'sliding': {
+      const track = frameDepth * 0.18;
+      const overlap = Math.min(w * 0.06, frameDepth * 0.18);
+      body = frame
+        + line(x, -track, overlap, -track)
+        + line(-overlap, track, -x, track)
+        + line(-overlap, -track, -overlap, frameDepth / 2)
+        + line(overlap, -frameDepth / 2, overlap, track);
       break;
-    case 'sliding':
-      body = frame + line(x, -frameDepth / 5, w * 0.12, -frameDepth / 5)
-        + line(-w * 0.12, frameDepth / 5, -x, frameDepth / 5);
-      break;
+    }
     case 'bath':
       body = rect(x, y, w, h, 'none', Math.min(w, h) * 0.06)
         + rect(x + w * 0.12, y + h * 0.09, w * 0.76, h * 0.82, 'none', Math.min(w, h) * 0.19)
