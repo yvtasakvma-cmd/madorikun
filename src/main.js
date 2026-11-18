@@ -165,7 +165,9 @@ function renderContext() {
     + colorField('default-color', defaults.color);
   if (tool === 'text') controls = numberField('サイズ', 'default-size', defaults.size, 4, 300);
   if (tool === 'opening' || tool === 'fixture') controls = partPalette(tool, activeParts[tool])
-    + '<span class="context-hint">パーツをキャンバスへドラッグ</span>';
+    + (tool === 'opening'
+      ? '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>'
+      : '<span class="context-hint">パーツをキャンバスへドラッグ</span>');
   if (tool === 'underlay') controls = importButton() + (doc().underlay
     ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
     : '<span class="context-hint">PDF・PNG・JPEG・WebPをキャンバスへドロップできます</span>');
@@ -338,9 +340,11 @@ function draftMarkup(wall) {
   } else if (!temporarySelection && tool === 'wall' && hover?.wallTarget) {
     markup += snapMarker(hover.wallTarget, 'wall-snap-target');
   }
-  if (draftPart) {
-    const draftDoc = { ...doc(), objects: [draftPart] };
-    markup += '<g opacity=".58">' + renderScene(draftDoc, { showUnderlay: false }) + '</g>';
+  if (draftPart && !temporarySelection && !drag) {
+    const host = itemBy(draftPart.wallId);
+    const draftDoc = { ...doc(), objects: host ? [host, draftPart] : [draftPart] };
+    const entry = renderScene(draftDoc, { showUnderlay: false, entries: true }).find(item => item.id === draftPart.id);
+    if (entry) markup += '<g class="part-preview" opacity=".62">' + entry.drawing + '</g>';
   }
   return `<g pointer-events="none">${markup}</g>`;
 }
@@ -386,6 +390,8 @@ function marqueeMarkup({ bounds }) {
 
 function draw() {
   drawFrame = 0;
+  stage.classList.toggle('part-placement-cursor',
+    tool === 'opening' && draftPart?.layer === 'opening' && !temporarySelection && !drag && !draggedKind);
   const wall = !temporarySelection && tool === 'wall' && pending.length && hover
     ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
   let graph = doc();
@@ -549,11 +555,20 @@ function addItem(item, message, adjustment) {
   }, message);
 }
 
-function placePart(kind, point) {
-  if (!Object.hasOwn(parts, kind)) return;
+function partAt(kind, point) {
   const part = makePart(kind, point);
   snapPart(part, point, doc());
-  addItem(part, parts[kind].name + 'を配置しました。');
+  return part;
+}
+
+function placePart(kind, point) {
+  if (!Object.hasOwn(parts, kind)) return;
+  const part = partAt(kind, point);
+  if (addItem(part, parts[kind].name + 'を配置しました。') && part.layer === 'opening') {
+    tool = 'select';
+    clearDraft();
+    renderAll();
+  }
 }
 
 function polygonForClosure(free) {
@@ -864,14 +879,18 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
+  } else if (tool === 'opening' && editable('opening') && !fileBusy) {
+    draftPart = partAt(activeParts.opening, toWorld(screenPoint(event)));
+    scheduleDraw();
   } else if (pending.length || (tool === 'wall' && editable('wall'))) {
     updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
   }
 });
 
 stage.addEventListener('pointerleave', () => {
-  if (!hover) return;
+  if (!hover && !draftPart) return;
   hover = null;
+  if (!draggedKind) draftPart = null;
   scheduleDraw();
 });
 
@@ -1154,6 +1173,8 @@ document.addEventListener('click', event => {
     }
   } else if (source.dataset.part) {
     activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+    draftPart = null;
+    scheduleDraw();
     renderContext();
     stage.focus({ preventScroll: true });
   } else if (source.dataset.toggle) {
@@ -1255,8 +1276,7 @@ area.addEventListener('dragover', event => {
   if (types.includes('Files')) $('#drag-note').hidden = false;
   else if (draggedKind) {
     const point = toWorld(screenPoint(event));
-    draftPart = makePart(draggedKind, point);
-    snapPart(draftPart, point, doc());
+    draftPart = partAt(draggedKind, point);
     scheduleDraw();
   }
 });
