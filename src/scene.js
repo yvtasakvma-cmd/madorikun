@@ -1,4 +1,5 @@
 import { add, DEFAULT_TEXT_FONT, floors, lengthOf, PART_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
+import { washerLabel } from './washer-label.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -58,10 +59,20 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         + circle(w * 0.23, h * 0.2, ring * 0.73);
       break;
     }
-    case 'washer':
-      body = rect(x, y, w, h, 'none', 2) + circle(0, h * 0.07, Math.min(w, h) * 0.29)
-        + line(x, y + h * 0.19, -x, y + h * 0.19);
+    case 'washer': {
+      const dash = Math.min(w, h) * 0.043;
+      const insetX = w * 0.21;
+      const insetY = h * 0.21;
+      body = `<g stroke-dasharray="${dash} ${dash}">
+        ${rect(x, y, w, h)}
+        ${line(x, y, x + insetX, y + insetY)}
+        ${line(-x, y, -x - insetX, y + insetY)}
+        ${line(x, -y, x + insetX, -y - insetY)}
+        ${line(-x, -y, -x - insetX, -y - insetY)}
+      </g><path aria-label="洗濯機置場" fill="${stroke}" stroke="none"
+        transform="scale(${w / 100} ${h / 100})" d="${washerLabel}"/>`;
       break;
+    }
     case 'compass':
       body = circle(0, 3, Math.min(w, h) * 0.48)
         + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z"/>`;
