@@ -1328,7 +1328,7 @@ exportForm.addEventListener('submit', async event => {
 });
 
 partDesignMenu.addEventListener('toggle', event => {
-  const anchor = $('[data-action="part-designs"]');
+  const anchor = $(`[data-design-kind="${partDesignMenu.dataset.kind}"]`);
   const open = event.newState === 'open';
   anchor?.setAttribute('aria-expanded', open);
   if (!open || !anchor) return;
@@ -1426,10 +1426,11 @@ function modifyObject(id, key, value) {
     if (key === 'room') Object.assign(target, { room: value, fill: roomColors[value].color ?? target.fill });
     else if (key === 'fill') Object.assign(target, { room: 'custom', fill: value });
     else if (key === 'tatami') target.tatami = Number(value);
-    else if (key === 'variant' && target.kind === 'toilet') {
-      const [previousWidth] = partSize(target.kind, target.variant);
-      const [newWidth] = partSize(target.kind, value);
+    else if (key === 'variant' && target.layer === 'fixture') {
+      const [previousWidth, previousHeight] = partSize(target.kind, target.variant);
+      const [newWidth, newHeight] = partSize(target.kind, value);
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
+      target.h = clamp(target.h * newHeight / previousHeight, 1, 50000);
       target.variant = value;
     } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);

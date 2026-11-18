@@ -1,3 +1,4 @@
+import { stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
 
 export const layers = [
@@ -39,12 +40,19 @@ export const PART_DESIGNS = {
     default: 'tank',
     choices: Object.fromEntries(Object.entries(toiletSymbols).map(([id, symbol]) => [id, symbol.name])),
   },
+  kitchen: {
+    default: 'counter',
+    choices: { counter: 'キッチン', ...Object.fromEntries(Object.entries(stoveSymbols).map(([id, symbol]) => [id, symbol.name])) },
+  },
   sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
 };
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
+const stoveScale = 39 / stoveSymbols.stove2.size[1];
+const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   if (isSlidingSymbol(kind)) return 0.8;
+  if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) return stoveStrokeWidth;
   if (kind !== 'toilet') return PART_STROKE.defaultWidth;
   const { bounds: [, top, , bottom], lineWidth } = toiletSymbols[variant];
   return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
@@ -149,6 +157,9 @@ export function blank() {
 
 export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   const size = parts[kind].size;
+  if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) {
+    return stoveSymbols[variant].size.map(dimension => dimension * stoveScale);
+  }
   if (kind !== 'toilet') return size;
   const [left, top, right, bottom] = toiletSymbols[variant].bounds;
   return [(right - left) * size[1] / (bottom - top), size[1]];

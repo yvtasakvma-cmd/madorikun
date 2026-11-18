@@ -1,4 +1,5 @@
 import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments } from './model.js';
+import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
 
@@ -14,6 +15,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
   const lineWidth = strokeWidth ?? partStrokeDefault(kind, variant);
+  const stove = kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant) ? stoveSymbols[variant] : null;
   const rect = (a, b, width, height, fill = 'none', radius = 0) =>
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
@@ -66,6 +68,10 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       body = toiletPaths(toiletSymbols[variant], w, h).map(path => `<path d="${path}"/>`).join('');
       break;
     case 'kitchen': {
+      if (stove) {
+        body = stoveDrawing(stove, w, h);
+        break;
+      }
       const ring = Math.min(w * 0.043, h * 0.13);
       body = rect(x, y, w, h)
         + rect(w * -0.43, h * -0.35, w * 0.37, h * 0.7, 'none', Math.min(w, h) * 0.09)
@@ -93,7 +99,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z"/>`;
       break;
   }
-  const square = isSlidingSymbol(kind) || kind === 'toilet';
+  const square = isSlidingSymbol(kind) || kind === 'toilet' || Boolean(stove);
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
     stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;
 }
