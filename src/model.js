@@ -88,6 +88,23 @@ export function snapClosingCorner(point, previous, first, tolerance) {
   return nearest;
 }
 
+export function alignFinalCorner(previous, last, first) {
+  if (isDrawingAngle(last, first)) return last;
+
+  const incoming = sub(last, previous);
+  const closing = sub(snapDrawingAngle(first, last), last).map(Math.sign);
+  const determinant = cross(incoming, closing);
+  if (Math.abs(determinant) < 1e-7) return null;
+
+  const delta = sub(first, previous);
+  const alongIncoming = cross(delta, closing) / determinant;
+  const alongClosing = cross(delta, incoming) / determinant;
+  const corner = add(first, closing.map(axis => axis * alongClosing));
+  if (alongIncoming <= 0 || alongClosing >= 0
+    || lengthOf(previous, corner) < 0.5 || lengthOf(corner, first) < 0.5) return null;
+  return corner;
+}
+
 export const PROJECT_VERSION = 3;
 export const OBJECT_LIMIT = 10000;
 

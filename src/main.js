@@ -1,7 +1,7 @@
 import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
-  add, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
+  add, alignFinalCorner, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
@@ -318,11 +318,13 @@ function handlesMarkup(items) {
 function draftMarkup() {
   let markup = '';
   if (pending.length) {
-    const points = [...pending, ...(hover ? [drawingPoint(hover.point, hover.free)] : [])];
+    const closing = hover && tool !== 'wall' && isClosingPoint(hover.point) ? polygonForClosure(hover.free) : null;
+    const vertices = closing ?? pending;
+    const points = hover ? [...vertices, closing ? vertices[0] : drawingPoint(hover.point, hover.free)] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
-    for (const [x, y] of pending) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
+    for (const [x, y] of vertices) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
   }
   if (draftPart) {
     const draftDoc = { ...doc(), objects: [draftPart] };
@@ -413,7 +415,6 @@ function drawingPoint(point, free) {
   const origin = pending.at(-1);
   if (tool === 'wall') return snapWallPoint(point, { origin, free });
   if (!origin) return point;
-  if (isClosingPoint(point) && (free || isDrawingAngle(origin, pending[0]))) return pending[0];
   if (free) return point;
   const corner = pending.length >= 2 && snapClosingCorner(point, origin, pending[0], 9 / view.scale);
   return corner || snapDrawingAngle(point, origin);
@@ -459,10 +460,16 @@ function placePart(kind, point) {
   addItem(part, parts[kind].name + 'を配置しました。');
 }
 
+function polygonForClosure(free) {
+  if (free) return pending;
+  const corner = alignFinalCorner(pending.at(-2), pending.at(-1), pending[0]);
+  return corner ? [...pending.slice(0, -1), corner] : null;
+}
+
 function finishPolygon(free = false) {
   if (pending.length < 3 || !editable(tool)) return;
-  const points = pending;
-  if (!free && !isDrawingAngle(points.at(-1), points[0])) {
+  const points = polygonForClosure(free);
+  if (!points) {
     status('角を追加するか、Shiftを押しながら閉じてください。', true);
     return;
   }
