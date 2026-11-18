@@ -36,7 +36,7 @@ const selection = new Set();
 let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18 };
 let activeParts = { opening: 'swing', fixture: 'bath' };
 let pending = [];
-let wallEndClick = null;
+let wallChain = null;
 let temporarySelection = false;
 let hover = null;
 let draftPart = null;
@@ -124,7 +124,7 @@ function reset(newDoc, asset) {
 
 function clearDraft() {
   pending = [];
-  wallEndClick = null;
+  wallChain = null;
   hover = null;
   draftPart = null;
 }
@@ -323,11 +323,10 @@ function snapMarker([x, y], className) {
       stroke="#ffffff" stroke-width="${1.5 / view.scale}"/>`;
 }
 
-function draftMarkup() {
+function draftMarkup(wall) {
   let markup = '';
   if (pending.length && !temporarySelection) {
     const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
-    const wall = hover && tool === 'wall' ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
     const vertices = closing ?? (wall ? [wall.start] : pending);
     const points = hover ? [...vertices, wall?.end ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
@@ -348,8 +347,8 @@ function draftMarkup() {
 
 const sceneNodes = new Map();
 
-function updateScene() {
-  const entries = renderScene(doc(), { underlayImage: state.asset?.url, entries: true });
+function updateScene(graph) {
+  const entries = renderScene(graph, { underlayImage: state.asset?.url, entries: true });
   const visible = new Set(entries.map(entry => entry.id));
   for (const [id, cached] of sceneNodes) {
     if (!visible.has(id)) {
@@ -387,12 +386,19 @@ function marqueeMarkup({ bounds }) {
 
 function draw() {
   drawFrame = 0;
-  const d = doc();
-  $('#paper').setAttribute('width', d.width);
-  $('#paper').setAttribute('height', d.height);
-  updateScene();
-  overlay.innerHTML = draftMarkup() + (drag?.type === 'marquee' && drag.bounds
-    ? marqueeMarkup(drag) : handlesMarkup(selectedObjects()));
+  const wall = !temporarySelection && tool === 'wall' && pending.length && hover
+    ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
+  let graph = doc();
+  if (wall?.adjustment) {
+    const { id } = wall.adjustment;
+    graph = { ...graph, objects: graph.objects.map(item => item.id === id || item.wallId === id ? { ...item } : item) };
+    applyWallAdjustment(graph, wall.adjustment);
+  }
+  $('#paper').setAttribute('width', graph.width);
+  $('#paper').setAttribute('height', graph.height);
+  updateScene(graph);
+  overlay.innerHTML = draftMarkup(wall) + (drag?.type === 'marquee' && drag.bounds
+    ? marqueeMarkup(drag) : handlesMarkup(graph.objects.filter(item => selection.has(item.id))));
 }
 
 function scheduleDraw() {
@@ -448,18 +454,48 @@ function updateDraftHover(point, free) {
   scheduleDraw();
 }
 
+function alignWallTail(tail, target) {
+  if (!tail || !canEditItem(tail)) return null;
+  const [dx, dy] = sub(tail.b, tail.a);
+  const corner = dx === 0 ? [tail.b[0], target[1]]
+    : dy === 0 ? [target[0], tail.b[1]] : null;
+  if (!corner || lengthOf(corner, target) < 1) return null;
+
+  const [newDx, newDy] = sub(corner, tail.a);
+  const newLength = lengthOf(corner, tail.a);
+  if (newLength < 1 || dx * newDx + dy * newDy <= 0) return null;
+  if (nearestWallEndpoint(tail.b, { radius: 0.01, excluded: new Set([tail.id]) })) return null;
+  if (doc().objects.some(item => item.wallId === tail.id && item.w > newLength)) return null;
+  return corner;
+}
+
+function applyWallAdjustment(graph, adjustment) {
+  const wall = graph.objects.find(item => item.id === adjustment.id);
+  wall.b = adjustment.end;
+  syncOpenings(graph, wall.id);
+}
+
 function wallDraft(point, free, stickyTarget) {
   const start = pending[0];
+  const tail = wallChain?.tailId ? itemBy(wallChain.tailId) : null;
   const anchored = !free && nearestWallEndpoint(start, { radius: 0.01 });
-  function startFor(target) {
+  function connection(target) {
     if (lengthOf(start, target) < 1) return null;
-    if (free || isDrawingAngle(start, target)) return start;
+    const allowed = free || isDrawingAngle(start, target);
+    const closesChain = wallChain && lengthOf(wallChain.first, target) < 1e-7;
+    if (!free && (!allowed || closesChain)) {
+      const corner = alignWallTail(tail, target);
+      if (corner && lengthOf(corner, start) > 1e-7) {
+        return { start: corner, adjustment: { id: tail.id, end: corner } };
+      }
+    }
+    if (allowed) return { start };
     if (anchored) return null;
     const aligned = snapDrawingAngle(start, target);
-    return lengthOf(aligned, start) * view.scale <= SNAP_RADIUS ? aligned : null;
+    return lengthOf(aligned, start) * view.scale <= SNAP_RADIUS ? { start: aligned } : null;
   }
-  const target = wallSnapTarget(point, stickyTarget, startFor);
-  return target ? { start: startFor(target), end: [...target], target }
+  const target = wallSnapTarget(point, stickyTarget, connection);
+  return target ? { ...connection(target), end: [...target], target }
     : { start, end: free ? point : snapDrawingAngle(point, start), target: null };
 }
 
@@ -496,7 +532,7 @@ function snapPart(part, point, graph, excluded = new Set()) {
   if (target) positionOpening(part, target.wall, target.t);
 }
 
-function addItem(item, message) {
+function addItem(item, message, adjustment) {
   if (!editable(item.layer)) {
     status('「' + names(item.layer) + '」レイヤーの表示とロックを確認してください。', true);
     return;
@@ -507,7 +543,10 @@ function addItem(item, message) {
   }
   selection.clear();
   selection.add(item.id);
-  return commit(d => { d.objects.push(item); }, message);
+  return commit(d => {
+    if (adjustment) applyWallAdjustment(d, adjustment);
+    d.objects.push(item);
+  }, message);
 }
 
 function placePart(kind, point) {
@@ -556,16 +595,19 @@ function drawingClick(event, point) {
     if (!pending.length) {
       const target = wallSnapTarget(point, hover?.wallTarget);
       pending = [target ? [...target] : point];
+      wallChain = { first: pending[0] };
       hover = null;
-    } else if (wallEndClick && Math.min(lengthOf(point, pending[0]), lengthOf(point, wallEndClick)) * view.scale <= 6) {
+    } else if (wallChain.lastClick && Math.min(lengthOf(point, pending[0]), lengthOf(point, wallChain.lastClick)) * view.scale <= 6) {
       finishWallChain();
       updateDraftHover(point, event.shiftKey);
     } else {
-      const { start, end } = wallDraft(point, event.shiftKey, hover?.wallTarget);
-      if (lengthOf(start, end) >= 1 && addItem({ id: uid(), layer: 'wall', a: start, b: end, width: defaults.width }, '壁を追加しました。')) {
+      const { start, end, adjustment } = wallDraft(point, event.shiftKey, hover?.wallTarget);
+      const wall = { id: uid(), layer: 'wall', a: start, b: end, width: defaults.width };
+      if (lengthOf(start, end) >= 1 && addItem(wall, '壁を追加しました。', adjustment)) {
         pending = [end];
         hover = null;
-        wallEndClick = point;
+        wallChain.tailId = wall.id;
+        wallChain.lastClick = point;
       }
     }
   } else if (tool === 'floor' || tool === 'color') {
