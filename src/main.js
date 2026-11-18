@@ -36,6 +36,8 @@ const selection = new Set();
 let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18 };
 let activeParts = { opening: 'swing', fixture: 'bath' };
 let pending = [];
+let wallEndClick = null;
+let temporarySelection = false;
 let hover = null;
 let draftPart = null;
 let drag = null;
@@ -100,8 +102,7 @@ function restore(source, destination, message) {
   if (!source.length || fileBusy || drag) return;
   destination.push(state);
   state = source.pop();
-  pending = [];
-  hover = null;
+  clearDraft();
   selection.clear();
   renderAll();
   if (fitOnResize) fit();
@@ -114,9 +115,7 @@ function reset(newDoc, asset) {
   undoStack.length = 0;
   redoStack.length = 0;
   selection.clear();
-  pending = [];
-  draftPart = null;
-  hover = null;
+  clearDraft();
   tool = 'select';
   pruneRasterUrls();
   renderAll();
@@ -125,6 +124,7 @@ function reset(newDoc, asset) {
 
 function clearDraft() {
   pending = [];
+  wallEndClick = null;
   hover = null;
   draftPart = null;
 }
@@ -141,7 +141,7 @@ function selectTool(next) {
 function fieldInstructions() {
   const label = {
     select: 'ドラッグで移動 · Alt＋ドラッグで複製',
-    wall: '始点と終点をクリック · Shiftで角度を自由に',
+    wall: 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: '配置する場所をクリック',
@@ -216,7 +216,7 @@ function renderInspector() {
 
 function renderControls() {
   for (const button of document.querySelectorAll('.tool')) button.setAttribute('aria-pressed', button.dataset.tool === tool);
-  stage.dataset.tool = tool;
+  stage.dataset.tool = temporarySelection ? 'select' : tool;
   stage.classList.toggle('is-panning', drag?.type === 'pan' || space);
   $('#project-name').value = doc().name;
   $('#dirty-dot').hidden = !dirty();
@@ -325,7 +325,7 @@ function snapMarker([x, y], className) {
 
 function draftMarkup() {
   let markup = '';
-  if (pending.length) {
+  if (pending.length && !temporarySelection) {
     const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
     const wall = hover && tool === 'wall' ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
     const vertices = closing ?? (wall ? [wall.start] : pending);
@@ -483,7 +483,7 @@ function addItem(item, message) {
   }
   selection.clear();
   selection.add(item.id);
-  commit(d => { d.objects.push(item); }, message);
+  return commit(d => { d.objects.push(item); }, message);
 }
 
 function placePart(kind, point) {
@@ -532,11 +532,14 @@ function drawingClick(event, point) {
     if (!pending.length) {
       const target = nearestWallEndpoint(point, { radius: SNAP_RADIUS });
       pending = [target ? [...target] : point];
+    } else if (wallEndClick && Math.min(lengthOf(point, pending[0]), lengthOf(point, wallEndClick)) * view.scale <= 6) {
+      finishWallChain();
     } else {
       const { start, end } = wallDraft(point, event.shiftKey, hover?.wallTarget);
-      if (lengthOf(start, end) >= 1) {
-        clearDraft();
-        addItem({ id: uid(), layer: 'wall', a: start, b: end, width: defaults.width }, '壁を追加しました。');
+      if (lengthOf(start, end) >= 1 && addItem({ id: uid(), layer: 'wall', a: start, b: end, width: defaults.width }, '壁を追加しました。')) {
+        pending = [end];
+        hover = null;
+        wallEndClick = point;
       }
     }
   } else if (tool === 'floor' || tool === 'color') {
@@ -554,6 +557,20 @@ function drawingClick(event, point) {
   } else if (tool === 'opening' || tool === 'fixture') {
     placePart(activeParts[tool], point);
   }
+  scheduleDraw();
+}
+
+function finishWallChain() {
+  clearDraft();
+  scheduleDraw();
+  status('壁の連続描画を終了しました。');
+}
+
+function setTemporarySelection(active) {
+  if (temporarySelection === active) return;
+  temporarySelection = active;
+  stage.dataset.tool = active ? 'select' : tool;
+  stage.classList.toggle('temporary-selection', active);
   scheduleDraw();
 }
 
@@ -587,11 +604,15 @@ stage.addEventListener('pointerdown', event => {
     beginDrag(event, 'pan', { view: { ...view } });
     return;
   }
-  if (tool === 'zoom') {
+  const pointerTool = event.ctrlKey ? 'select' : tool;
+  setTemporarySelection(event.ctrlKey);
+  const endedWall = event.ctrlKey && tool === 'wall' && pending.length > 0;
+  if (endedWall) finishWallChain();
+  if (pointerTool === 'zoom') {
     zoom(event.shiftKey ? 1 / 1.25 : 1.25, screen);
     return;
   }
-  const handle = ['select', 'underlay', 'opening', 'fixture'].includes(tool)
+  const handle = !endedWall && ['select', 'underlay', 'opening', 'fixture'].includes(pointerTool)
     ? event.target.closest('[data-handle]')?.dataset.handle : null;
   const hit = event.target.closest('[data-id]')?.dataset.id;
   if (handle) {
@@ -599,10 +620,10 @@ stage.addEventListener('pointerdown', event => {
     if (items.every(canEditItem)) beginDrag(event, 'handle', { handle, ids: [...selection] });
     return;
   }
-  if (tool === 'underlay' || tool === 'select') {
+  if (pointerTool === 'underlay' || pointerTool === 'select') {
     if (hit === 'underlay' && !editable('underlay')) return;
     const item = itemBy(hit);
-    if (item && (!canEditItem(item) || tool === 'underlay')) return;
+    if (item && (!canEditItem(item) || pointerTool === 'underlay')) return;
     if (!event.shiftKey && (!hit || !selection.has(hit))) selection.clear();
     if (hit && event.shiftKey && selection.has(hit)) selection.delete(hit);
     else if (hit) {
@@ -1170,6 +1191,7 @@ window.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.isComposing || document.querySelector('dialog[open]')) return;
   if (event.target.closest('input, textarea, select, [contenteditable]')) return;
   const key = event.key.toLowerCase();
+  if (key === 'control' && !fileBusy) setTemporarySelection(true);
   if (event.ctrlKey && !event.altKey) {
     if (key === '0' || event.code === 'Numpad0') {
       event.preventDefault();
@@ -1220,10 +1242,12 @@ function releaseFreeAngle() {
 }
 window.addEventListener('keyup', event => {
   if (event.code === 'Space') stopSpace();
+  if (event.key === 'Control' && !event.ctrlKey) setTemporarySelection(false);
   if (event.key === 'Shift' && !event.shiftKey) releaseFreeAngle();
 });
 window.addEventListener('blur', () => {
   stopSpace();
+  setTemporarySelection(false);
   releaseFreeAngle();
 });
 window.addEventListener('beforeunload', event => {

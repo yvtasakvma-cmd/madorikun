@@ -131,6 +131,7 @@ export function layout() {
         <dt>Alt ＋ ドラッグ</dt><dd>選択した図形を複製して移動</dd>
         <dt>Shift ＋ 角をドラッグ</dt><dd>縦横比を保って拡大・縮小</dd>
         <dt>Shift ＋ クリック</dt><dd>作図時は自由な角度、選択時は図形を追加</dd>
+        <dt>Ctrl ＋ クリック</dt><dd>一時的に選択。壁の連続描画中は終了</dd>
         <dt>Space ＋ ドラッグ</dt><dd>キャンバスを移動</dd>
         <dt>Z</dt><dd>虫眼鏡に切り替え</dd>
         <dt>Ctrl ＋ 0 ／ −</dt><dd>全体表示 ／ 縮小</dd>
