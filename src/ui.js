@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, DEFAULT_TOILET_DESIGN, floors, layers, PART_STROKE, parts, roomColors, TEXT_FONTS, TOILET_DESIGNS } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partStrokeDefault, roomColors, TEXT_FONTS } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -141,7 +141,7 @@ export function layout() {
         <dt>Delete ／ Esc</dt><dd>選択した図形を削除 ／ 操作を中断</dd>
       </dl>
     </dialog>
-    <div id="toilet-designs" class="toilet-designs" popover="auto" aria-label="トイレのデザイン"></div>
+    <div id="part-designs" class="part-designs" popover="auto" aria-label="パーツのデザイン"></div>
     <div id="measure" aria-hidden="true"></div>
   `;
 }
@@ -169,21 +169,22 @@ function partIcon(id, variant) {
   return `<svg aria-hidden="true" viewBox="${-width / 2 - 6} ${viewTop} ${width + 12} ${viewBottom - viewTop}">${drawing}</svg>`;
 }
 
-export function partPalette(layer, current, toiletDesign) {
+export function partPalette(layer, current, designs) {
   return '<div class="part-palette">' + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
     const control = `<button type="button" draggable="true" data-part="${id}" aria-pressed="${current === id}">
-      ${partIcon(id, id === 'toilet' ? toiletDesign : undefined)}<span>${part.name}</span></button>`;
-    if (id !== 'toilet') return control;
-    return `<div class="toilet-split">${control}<button type="button" class="toilet-design-trigger"
-      data-action="toilet-designs" popovertarget="toilet-designs" aria-label="トイレのデザインを選ぶ" aria-controls="toilet-designs" aria-expanded="false">
+      ${partIcon(id, designs[id])}<span>${part.name}</span></button>`;
+    if (!Object.hasOwn(PART_DESIGNS, id)) return control;
+    return `<div class="part-split">${control}<button type="button" class="part-design-trigger"
+      data-action="part-designs" data-design-kind="${id}" popovertarget="part-designs"
+      aria-label="${part.name}のデザインを選ぶ" aria-controls="part-designs" aria-expanded="false">
       <svg aria-hidden="true" viewBox="0 0 12 12"><path d="m4 2 6 4-6 4z" fill="currentColor"/></svg>
     </button></div>`;
   }).join('') + '</div>';
 }
 
-export function toiletDesignChoices(current) {
-  return Object.entries(TOILET_DESIGNS).map(([id, name]) => `<button type="button" data-toilet-design="${id}"
-      aria-pressed="${id === current}">${partIcon('toilet', id)}<span>${name}</span></button>`).join('');
+export function partDesignChoices(kind, current) {
+  return Object.entries(PART_DESIGNS[kind].choices).map(([id, name]) => `<button type="button" data-part-design="${id}"
+      aria-pressed="${id === current}">${partIcon(kind, id)}<span>${name}</span></button>`).join('');
 }
 
 export function propertyMarkup(item) {
@@ -206,10 +207,11 @@ export function propertyMarkup(item) {
       + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
   }
   const stroke = PART_STROKE;
-  return (item.kind === 'toilet' ? selectField('デザイン', 'object-variant', item.variant ?? DEFAULT_TOILET_DESIGN, Object.entries(TOILET_DESIGNS)) : '')
+  const design = Object.hasOwn(PART_DESIGNS, item.kind) ? PART_DESIGNS[item.kind] : null;
+  return (design ? selectField('デザイン', 'object-variant', item.variant ?? design.default, Object.entries(design.choices)) : '')
     + numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
-    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? stroke.defaultWidth, stroke.min, stroke.max, 0.01)
+    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind), stroke.min, stroke.max, 0.01)
     + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
       <div class="property-actions part-actions">
         ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}

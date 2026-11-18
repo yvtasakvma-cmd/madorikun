@@ -32,12 +32,17 @@ export const DEFAULT_TEXT_FONT = 'gothic';
 
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 
-export const TOILET_DESIGNS = {
-  tank: 'タンク付き',
-  tankless: 'タンクレス',
-  square: '角型',
+export const PART_DESIGNS = {
+  toilet: { default: 'tank', choices: { tank: 'タンク付き', tankless: 'タンクレス', square: '角型' } },
+  sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
 };
-export const DEFAULT_TOILET_DESIGN = 'tank';
+
+export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
+export const partStrokeDefault = kind => isSlidingSymbol(kind) ? 0.8 : PART_STROKE.defaultWidth;
+
+export function openingFrameDepth(kind, width, depth) {
+  return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;
+}
 
 export const parts = {
   swing: { name: '片開き戸', layer: 'opening', size: [50, 50] },

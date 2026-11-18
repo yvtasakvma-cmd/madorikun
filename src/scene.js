@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, DEFAULT_TOILET_DESIGN, floors, lengthOf, PART_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
 import { washerLabel } from './washer-label.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
@@ -25,7 +25,7 @@ function toiletDrawing(variant, w, h, rect) {
        <ellipse cy="${h * 0.13}" rx="${w * 0.25}" ry="${h * 0.25}"/>`;
 }
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = PART_STROKE.defaultWidth, variant = DEFAULT_TOILET_DESIGN) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = partStrokeDefault(kind), variant = PART_DESIGNS[kind]?.default) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -33,7 +33,8 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
   const circle = (cx, cy, r, fill = 'none') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`;
-  const frame = rect(x, -frameDepth / 2, w, frameDepth, '#ffffff');
+  const depth = openingFrameDepth(kind, w, frameDepth);
+  const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
   switch (kind) {
     case 'swing':
@@ -47,13 +48,23 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     case 'window':
     case 'sliding': {
-      const track = frameDepth * 0.18;
-      const overlap = Math.min(w * 0.06, frameDepth * 0.18);
-      body = frame
-        + line(x, -track, overlap, -track)
-        + line(-overlap, track, -x, track)
-        + line(-overlap, -track, -overlap, frameDepth / 2)
-        + line(overlap, -frameDepth / 2, overlap, track);
+      if (kind === 'sliding' && variant === 'pocket') {
+        const seam = -w * 0.013;
+        const rail = -depth * 0.2;
+        const bandTop = depth * 0.12;
+        body = frame + `<rect x="${seam}" y="${bandTop}" width="${-x - seam}" height="${depth / 2 - bandTop}" fill="${stroke}" stroke="none"/>`
+          + line(x, rail, seam, rail)
+          + `<path d="M${seam} ${rail}H${-x}" stroke-dasharray="${w * 0.03} ${w * 0.026}"/>`
+          + line(seam, -depth / 2, seam, depth / 2);
+      } else {
+        const seam = w * 0.015;
+        const lap = depth * 0.24;
+        const rail = depth / 6;
+        body = frame
+          + line(x, -rail, seam + lap, -rail)
+          + line(seam - lap, rail, -x, rail)
+          + line(seam, -depth / 2, seam, depth / 2);
+      }
       break;
     }
     case 'bath':
@@ -97,7 +108,9 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z"/>`;
       break;
   }
-  return `<g fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
+  const square = isSlidingSymbol(kind);
+  return `<g fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
+    stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;
 }
 
 function pointInPolygon(point, polygon) {

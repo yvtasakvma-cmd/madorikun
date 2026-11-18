@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, DEFAULT_TOILET_DESIGN, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
 } from './model.js';
 import {
@@ -11,7 +11,7 @@ import {
 } from './files.js';
 import {
   colorField, floorChoices, fontChoices, icon, importButton, layout, numberField, partPalette,
-  propertyMarkup, removeButton, roomChoices, selectField, toiletDesignChoices, tools,
+  propertyMarkup, removeButton, roomChoices, selectField, partDesignChoices, tools,
 } from './ui.js';
 
 document.querySelector('#app').innerHTML = layout();
@@ -25,7 +25,7 @@ const context = $('#context-bar');
 const inspector = $('#inspector');
 const exportForm = $('#export-form');
 const exportDialog = $('#export-dialog');
-const toiletDesignMenu = $('#toilet-designs');
+const partDesignMenu = $('#part-designs');
 
 let state = { doc: blank(), asset: null, revision: 0 };
 let nextRevision = 0;
@@ -36,7 +36,7 @@ let tool = 'select';
 const selection = new Set();
 let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
-let toiletDesign = DEFAULT_TOILET_DESIGN;
+const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, design]) => [kind, design.default]));
 let pending = [];
 let wallChain = null;
 let temporarySelection = false;
@@ -138,7 +138,7 @@ function clearDraft() {
 function selectTool(next, { keepSelection = false } = {}) {
   if (drag) cancelDrag();
   tool = next;
-  if (toiletDesignMenu.matches(':popover-open')) toiletDesignMenu.hidePopover();
+  if (partDesignMenu.matches(':popover-open')) partDesignMenu.hidePopover();
   clearDraft();
   if (!keepSelection) selection.clear();
   stage.focus({ preventScroll: true });
@@ -172,7 +172,7 @@ function renderContext() {
     + colorField('default-color', defaults.color);
   if (tool === 'text') controls = selectField('書体', 'default-font', defaults.font, fontChoices())
     + numberField('サイズ', 'default-size', defaults.size, 4, 300);
-  if (Object.hasOwn(activeParts, tool)) controls = partPalette(tool, activeParts[tool], toiletDesign)
+  if (Object.hasOwn(activeParts, tool)) controls = partPalette(tool, activeParts[tool], partDesigns)
     + '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>';
   if (tool === 'underlay') controls = importButton() + (doc().underlay
     ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
@@ -308,7 +308,8 @@ function boundsOf(items) {
 
 function partRotationBox(item) {
   if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
-  const halfFrame = (itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10)) / 2;
+  const frame = itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10);
+  const halfFrame = openingFrameDepth(item.kind, item.w, frame) / 2;
   const swingDepth = item.kind === 'swing' ? item.w
     : item.kind === 'double' ? item.w / 2 : item.kind === 'folding' ? item.h : 0;
   const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);
@@ -669,7 +670,7 @@ function addItem(item, message, adjustment) {
 
 function partAt(kind, point) {
   const part = makePart(kind, point);
-  if (kind === 'toilet') part.variant = toiletDesign;
+  if (Object.hasOwn(partDesigns, kind)) part.variant = partDesigns[kind];
   snapPart(part, point, doc());
   return part;
 }
@@ -798,7 +799,7 @@ function cancelDrag() {
 }
 
 stage.addEventListener('pointerdown', event => {
-  if (fileBusy || event.button > 1 || toiletDesignMenu.matches(':popover-open')) return;
+  if (fileBusy || event.button > 1 || partDesignMenu.matches(':popover-open')) return;
   const screen = screenPoint(event);
   const point = toWorld(screen);
   stage.focus({ preventScroll: true });
@@ -1318,15 +1319,15 @@ exportForm.addEventListener('submit', async event => {
   }
 });
 
-toiletDesignMenu.addEventListener('toggle', event => {
-  const anchor = $('[data-action="toilet-designs"]');
+partDesignMenu.addEventListener('toggle', event => {
+  const anchor = $('[data-action="part-designs"]');
   const open = event.newState === 'open';
   anchor?.setAttribute('aria-expanded', open);
   if (!open || !anchor) return;
   const bounds = anchor.getBoundingClientRect();
-  toiletDesignMenu.style.left = clamp(bounds.left, 8, window.innerWidth - toiletDesignMenu.offsetWidth - 8) + 'px';
-  toiletDesignMenu.style.top = clamp(bounds.bottom + 6, 8, window.innerHeight - toiletDesignMenu.offsetHeight - 8) + 'px';
-  toiletDesignMenu.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  partDesignMenu.style.left = clamp(bounds.left, 8, window.innerWidth - partDesignMenu.offsetWidth - 8) + 'px';
+  partDesignMenu.style.top = clamp(bounds.bottom + 6, 8, window.innerHeight - partDesignMenu.offsetHeight - 8) + 'px';
+  partDesignMenu.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
 });
 
 function runAction(action, source) {
@@ -1354,8 +1355,13 @@ function runAction(action, source) {
   else if (action === 'zoom-in') zoom(1.25);
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
-  else if (action === 'toilet-designs') {
-    if (!toiletDesignMenu.matches(':popover-open')) toiletDesignMenu.innerHTML = toiletDesignChoices(toiletDesign);
+  else if (action === 'part-designs') {
+    if (!partDesignMenu.matches(':popover-open')) {
+      const kind = source.dataset.designKind;
+      partDesignMenu.dataset.kind = kind;
+      partDesignMenu.setAttribute('aria-label', parts[kind].name + 'のデザイン');
+      partDesignMenu.innerHTML = partDesignChoices(kind, partDesigns[kind]);
+    }
   }
   else if (['flip-x', 'flip-y'].includes(action)) {
     const item = selectedObjects()[0];
@@ -1372,10 +1378,11 @@ document.addEventListener('click', event => {
   if (!source) return;
   if (source.dataset.action) runAction(source.dataset.action, source);
   else if (fileBusy || drag) return;
-  else if (source.dataset.toiletDesign) {
-    toiletDesign = source.dataset.toiletDesign;
-    activeParts.fixture = 'toilet';
-    toiletDesignMenu.hidePopover();
+  else if (source.dataset.partDesign) {
+    const kind = partDesignMenu.dataset.kind;
+    partDesigns[kind] = source.dataset.partDesign;
+    activeParts[parts[kind].layer] = kind;
+    partDesignMenu.hidePopover();
     renderContext();
     stage.focus({ preventScroll: true });
   } else if (source.dataset.tool) {
@@ -1524,7 +1531,7 @@ window.addEventListener('drop', event => {
 
 window.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.isComposing || document.querySelector('dialog[open]')) return;
-  if (event.target.closest('input, textarea, select, [contenteditable], #toilet-designs')) return;
+  if (event.target.closest('input, textarea, select, [contenteditable], #part-designs')) return;
   const key = event.key.toLowerCase();
   if (key === 'control' && !fileBusy) setTemporarySelection(true);
   if (event.ctrlKey && !event.altKey) {

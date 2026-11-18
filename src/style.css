@@ -69,15 +69,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .part-palette svg { width: 28px; height: 25px; pointer-events: none; }
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 278px; min-height: 0; }
-.toilet-split { display: flex; flex: 0 0 80px; }
-.part-palette .toilet-split [data-part="toilet"] { width: 60px; border-radius: 6px 0 0 6px; }
-.part-palette .toilet-design-trigger { width: 20px; display: grid; grid-template-rows: auto; border-left: 0; border-radius: 0 6px 6px 0; cursor: pointer; }
-.part-palette .toilet-design-trigger svg { width: 12px; height: 12px; }
-.toilet-designs { position: fixed; inset: auto; margin: 0; padding: 7px; border: 1px solid #d9e4dd; border-radius: 9px; background: #fff; color: #273a30; box-shadow: 0 8px 24px #14362924; }
-.toilet-designs:popover-open { display: flex; gap: 5px; }
-.toilet-designs button { display: grid; place-items: center; gap: 4px; min-width: 70px; padding: 6px 4px; font-size: 11px; color: inherit; cursor: pointer; background: #f9fbfa; border: 1px solid #e2e8e4; border-radius: 6px; }
-.toilet-designs button:hover, .toilet-designs button[aria-pressed="true"] { background: var(--light-green); border-color: #a6c7b9; }
-.toilet-designs svg { width: 32px; height: 39px; pointer-events: none; }
+.part-split { display: flex; flex: 0 0 80px; }
+.part-palette .part-split [data-part] { width: 60px; border-radius: 6px 0 0 6px; }
+.part-palette .part-design-trigger { width: 20px; display: grid; grid-template-rows: auto; border-left: 0; border-radius: 0 6px 6px 0; cursor: pointer; }
+.part-palette .part-design-trigger svg { width: 12px; height: 12px; }
+.part-designs { position: fixed; inset: auto; margin: 0; padding: 7px; border: 1px solid #d9e4dd; border-radius: 9px; background: #fff; color: #273a30; box-shadow: 0 8px 24px #14362924; }
+.part-designs:popover-open { display: flex; gap: 5px; }
+.part-designs button { display: grid; place-items: center; gap: 4px; min-width: 70px; padding: 6px 4px; font-size: 11px; color: inherit; cursor: pointer; background: #f9fbfa; border: 1px solid #e2e8e4; border-radius: 6px; }
+.part-designs button:hover, .part-designs button[aria-pressed="true"] { background: var(--light-green); border-color: #a6c7b9; }
+.part-designs svg { width: 32px; height: 39px; pointer-events: none; }
 
 .canvas-area { position: relative; min-width: 0; min-height: 0; isolation: isolate; overflow: hidden; background-color: #edf1ee; background-image: radial-gradient(#c8d4cd 0.8px, transparent 0.9px); background-size: 16px 16px; }
 #stage { display: block; width: 100%; height: 100%; outline: none; touch-action: none; user-select: none; cursor: crosshair; }
