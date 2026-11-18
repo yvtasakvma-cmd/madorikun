@@ -207,8 +207,9 @@ export function propertyMarkup(item) {
   if (item.layer === 'text') {
     const font = item.font ?? DEFAULT_TEXT_FONT;
     return selectField('書体', 'object-font', font, fontChoices())
-      + `<label class="stack-field">文字<textarea data-field="object-value" style="font-family:${TEXT_FONTS[font].family}, sans-serif"
-          maxlength="500" rows="3">${escapeHtml(item.value)}</textarea></label>`
+      + `<label class="stack-field">文字<textarea data-field="object-value" data-object-id="${escapeHtml(item.id)}" style="font-family:${TEXT_FONTS[font].family}, sans-serif"
+          maxlength="500" rows="3">
+${escapeHtml(item.value)}</textarea></label>`
       + numberField('サイズ', 'object-size', item.size, 4, 300)
       + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
   }

@@ -23,6 +23,7 @@ const scene = $('#scene');
 const overlay = $('#overlay');
 const context = $('#context-bar');
 const inspector = $('#inspector');
+const TEXT_INPUT = 'textarea[data-field="object-value"]';
 const exportForm = $('#export-form');
 const exportDialog = $('#export-dialog');
 const partDesignMenu = $('#part-designs');
@@ -153,7 +154,7 @@ function fieldInstructions() {
     wall: 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
-    text: '配置する場所をクリック',
+    text: '配置する場所をクリックして入力',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
   return label ? `<span class="context-hint">${label}</span>` : '';
@@ -471,6 +472,13 @@ function draw() {
   const wall = !temporarySelection && tool === 'wall' && pending.length && hover
     ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
   let graph = doc();
+  const editor = document.activeElement;
+  if (editor?.matches(TEXT_INPUT)) {
+    const item = itemBy(editor.dataset.objectId);
+    if (item && item.value !== editor.value) {
+      graph = { ...graph, objects: graph.objects.map(object => object === item ? { ...object, value: editor.value } : object) };
+    }
+  }
   if (wall?.adjustment) {
     const { id } = wall.adjustment;
     graph = { ...graph, objects: graph.objects.map(item => item.id === id || item.wallId === id ? { ...item } : item) };
@@ -767,8 +775,13 @@ function drawingClick(event, point) {
       }
     }
   } else if (tool === 'text') {
-    addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, font: defaults.font, angle: 0 }, '文字を追加しました。');
-    inspector.querySelector('textarea')?.select();
+    // Suppress the canvas's default mouse focus after focusing the editor.
+    event.preventDefault();
+    if (addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, font: defaults.font, angle: 0 }, '文字を追加しました。')) {
+      const editor = inspector.querySelector(TEXT_INPUT);
+      editor.focus();
+      editor.select();
+    }
   } else if (Object.hasOwn(activeParts, tool)) {
     placePart(activeParts[tool], point);
   }
@@ -1455,6 +1468,10 @@ function modifyObject(id, key, value) {
   }, undefined, state.asset, key === 'value' ? renderTextEdit : renderAll);
 }
 
+inspector.addEventListener('input', event => {
+  if (event.target.matches(TEXT_INPUT)) scheduleDraw();
+});
+
 document.addEventListener('change', event => {
   const input = event.target;
   if (input.id === 'open-input' || input.id === 'underlay-input') {
@@ -1489,7 +1506,7 @@ document.addEventListener('change', event => {
       for (const item of graph.objects) if (walls.has(item.id)) item[property] = value;
     }, key === 'wallWidth' ? '選択した壁の太さを変更しました。' : '選択した壁の線種を変更しました。');
   } else if (group === 'object') {
-    const item = selectedObjects()[0];
+    const item = key === 'value' ? itemBy(input.dataset.objectId) : selectedObjects()[0];
     if (item && canEditItem(item)) modifyObject(item.id, key, value);
   } else if (group === 'underlay' && doc().underlay && editable('underlay')) {
     if (key === 'page') {
