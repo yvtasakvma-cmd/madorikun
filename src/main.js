@@ -2,7 +2,7 @@ import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
   add, blank, clamp, detach, floors, layers, lengthOf, makePart, parts, positionOpening,
-  projectOnWall, rotate, sample, sub, syncOpenings, uid,
+  projectOnWall, rotate, sub, syncOpenings, uid,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
 import { download, exportSetup, makeExport, openPdf, PDF_LIMIT, rasterPdfPage, readProject, saveProject } from './files.js';
@@ -24,7 +24,7 @@ const inspector = $('#inspector');
 const exportForm = $('#export-form');
 const exportDialog = $('#export-dialog');
 
-let state = { doc: sample(), asset: null, revision: 0 };
+let state = { doc: blank(), asset: null, revision: 0 };
 let nextRevision = 0;
 let savedRevision = 0;
 const undoStack = [];

@@ -43,9 +43,9 @@ export const rotate = ([x, y], angle) => {
 export const add = (a, b) => a.map((x, i) => x + b[i]);
 export const sub = (a, b) => a.map((x, i) => x - b[i]);
 
-export function blank(name = '無題の間取り') {
+export function blank() {
   return {
-    version: 1, name, width: 720, height: 900,
+    version: 1, name: '無題の間取り', width: 720, height: 900,
     layers: layers.map(({ id }) => ({ id, visible: true, locked: false })),
     objects: [], underlay: null,
   };
@@ -103,89 +103,4 @@ export function wallSegments(wall, openings) {
   }
   if (start < 1) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, 1 + cap)]);
   return segments;
-}
-
-export function sample() {
-  const doc = blank('サンプル間取り');
-  const polygon = (preset, points) => doc.objects.push({
-    id: uid(), layer: 'floor', preset, points, fill: floors[preset].color, direction: 'vertical', tatami: 6, spacing: 12,
-  });
-  const rectangle = (preset, x, y, w, h) => polygon(preset, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
-  const wall = (x, y, x2, y2, width = 7) => {
-    const item = { id: uid(), layer: 'wall', a: [x, y], b: [x2, y2], width };
-    doc.objects.push(item);
-    return item;
-  };
-  const part = (kind, x, y, w, angle = 0, flipY = false) => {
-    const item = makePart(kind, [x, y], w);
-    Object.assign(item, { angle, flipY });
-    doc.objects.push(item);
-    return item;
-  };
-  const opening = (kind, host, t, w, flipX = false, flipY = false) => {
-    const item = part(kind, 0, 0, w);
-    Object.assign(item, { flipX, flipY });
-    positionOpening(item, host, t);
-    return item;
-  };
-  const label = (value, x, y, size = 17) => doc.objects.push({
-    id: uid(), layer: 'text', at: [x, y], value, size, angle: 0,
-  });
-
-  rectangle('entry', 186, 737, 348, 69);
-  rectangle('wood', 186, 94, 149, 239);
-  rectangle('entry', 335, 94, 70, 108);
-  polygon('wood', [[335, 202], [405, 202], [405, 94], [534, 94], [534, 737], [365, 737], [365, 511], [311, 511], [311, 333], [335, 333]]);
-  rectangle('wet', 186, 333, 125, 117);
-  rectangle('wet', 186, 450, 79, 61);
-  rectangle('storage', 265, 450, 46, 61);
-  rectangle('tatami', 186, 511, 179, 226);
-  rectangle('storage', 186, 511, 94, 46);
-  rectangle('storage', 405, 94, 55, 43);
-
-  const top = wall(186, 94, 534, 94, 11);
-  wall(186, 94, 186, 737, 12);
-  wall(534, 94, 534, 737, 12);
-  const bottom = wall(186, 737, 534, 737, 10);
-  const bedroom = wall(335, 94, 335, 333);
-  wall(186, 333, 335, 333);
-  wall(405, 94, 405, 202);
-  wall(335, 202, 405, 202, 4);
-  const wet = wall(311, 333, 311, 511);
-  wall(186, 450, 311, 450);
-  wall(265, 450, 265, 511, 5);
-  const tatami = wall(186, 511, 365, 511);
-  wall(186, 557, 280, 557, 4);
-  wall(280, 511, 280, 557, 4);
-  wall(365, 511, 365, 737);
-  wall(186, 737, 186, 806, 2);
-  wall(534, 737, 534, 806, 2);
-  wall(186, 806, 534, 806, 2);
-  opening('swing', top, 0.53, 55, false, true);
-  opening('window', top, 0.22, 104);
-  opening('window', top, 0.85, 74);
-  opening('swing', bedroom, 0.83, 52, true);
-  opening('swing', wet, 0.36, 49, true);
-  opening('swing', tatami, 0.79, 51, true, true);
-  opening('window', bottom, 0.29, 116);
-  opening('sliding', bottom, 0.75, 108);
-  part('bath', 215, 379, 39);
-  part('basin', 279, 420, 40);
-  part('toilet', 219, 480, 30);
-  part('washer', 275, 356, 27);
-  part('kitchen', 508, 320, 120, 90);
-  part('compass', 142, 779, 30);
-
-  label('洋室\n（約6帖）', 254, 209);
-  label('玄関', 370, 156, 15);
-  label('収納', 432, 117, 13);
-  label('浴室', 217, 428, 13);
-  label('洗面', 278, 389, 13);
-  label('トイレ', 242, 488, 12);
-  label('物入', 288, 484, 12);
-  label('押入', 233, 533, 14);
-  label('和室\n（6帖）', 277, 638);
-  label('LDK\n（約12帖）', 446, 508, 21);
-  label('バルコニー', 361, 773, 16);
-  return doc;
 }
