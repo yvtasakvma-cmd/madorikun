@@ -1,7 +1,7 @@
 import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
-  add, alignFinalCorner, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
 } from './model.js';
 import {
@@ -229,6 +229,7 @@ function renderControls() {
   for (const button of document.querySelectorAll('.tool')) button.setAttribute('aria-pressed', button.dataset.tool === tool);
   stage.dataset.tool = temporarySelection ? 'select' : tool;
   stage.classList.toggle('is-panning', drag?.type === 'pan' || space);
+  stage.classList.toggle('rotating-opening', drag?.handle === 'rotate-opening');
   $('#project-name').value = doc().name;
   $('#dirty-dot').hidden = !dirty();
   $('[data-action="undo"]').disabled = !undoStack.length;
@@ -295,6 +296,14 @@ function boundsOf(items) {
   return polygonBounds(items.flatMap(item => corners(objectBounds(item))));
 }
 
+function openingRotationBox(item) {
+  const halfFrame = (itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10)) / 2;
+  const swingDepth = item.kind === 'swing' ? item.w
+    : item.kind === 'double' ? item.w / 2 : item.kind === 'folding' ? item.h : 0;
+  const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);
+  return { x: -item.w / 2, y, width: item.w, height: halfFrame + Math.max(halfFrame, swingDepth) };
+}
+
 function handlesMarkup(items) {
   if (!items.length && !selection.has('underlay')) return '';
   const radius = 4.8 / view.scale;
@@ -330,9 +339,19 @@ function handlesMarkup(items) {
       + handle(item.a, 'wall-a') + handle(item.b, 'wall-b');
   } else if (items.length === 1 && items[0].layer === 'opening') {
     const item = items[0];
-    const left = add(item.at, rotate([-item.w / 2, 0], item.angle));
-    const right = add(item.at, rotate([item.w / 2, 0], item.angle));
-    draw = edge(left, right) + handle(left, 'part-left') + handle(right, 'part-right');
+    const worldPoint = point => add(item.at, rotate(point, item.angle));
+    const left = worldPoint([-item.w / 2, 0]);
+    const right = worldPoint([item.w / 2, 0]);
+    const local = corners(openingRotationBox(item));
+    const outline = local.map(worldPoint);
+    const rotationHandles = local.map(([x, y], i) => {
+      const [sx, sy] = DIRECTIONS[HANDLES[i]];
+      const [cx, cy] = worldPoint([x + sx * 6 / view.scale, y + sy * 6 / view.scale]);
+      return `<circle class="opening-rotation-handle" data-handle="rotate-opening"
+        cx="${cx}" cy="${cy}" r="${9 / view.scale}"/>`;
+    }).join('');
+    draw = outline.map((point, i) => edge(point, outline[(i + 1) % 4], `${4 / view.scale} ${3 / view.scale}`)).join('')
+      + rotationHandles + handle(left, 'part-left') + handle(right, 'part-right');
   } else if (items.length) {
     const box = boundsOf(items);
     draw = selectionEdges(box) + corners(box).map((point, i) => handle(point, HANDLES[i])).join('');
@@ -747,6 +766,7 @@ function beginDrag(event, type, data = {}) {
   const screen = screenPoint(event);
   drag = { type, pointer: event.pointerId, start: toWorld(screen), screen, before: state, moved: false, ...data };
   stage.classList.toggle('is-panning', type === 'pan');
+  stage.classList.toggle('rotating-opening', data.handle === 'rotate-opening');
 }
 
 function cancelDrag() {
@@ -926,6 +946,17 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
   for (const id of walls) syncOpenings(graph, id);
 }
 
+function rotateOpening(item, from, to, free) {
+  if (lengthOf(item.at, to) < 0.001) return false;
+  const raw = item.angle + angleOf(item.at, to) - angleOf(item.at, from);
+  const angle = free ? raw : 45 * Math.round(raw / 45);
+  const difference = ((angle - item.angle) % 360 + 540) % 360 - 180;
+  if (Math.abs(difference) < 1e-7) return false;
+  detach(item);
+  item.angle = (angle % 360 + 360) % 360;
+  return true;
+}
+
 function handleDrag(graph, current, point, proportional) {
   const { handle, ids } = current;
   if (ids.includes('underlay')) {
@@ -943,13 +974,16 @@ function handleDrag(graph, current, point, proportional) {
     const snapped = snapWallPoint(point, { excluded: chosen, origin: other, free: proportional });
     if (lengthOf(snapped, other) >= 1) item[endpoint] = snapped;
     syncOpenings(graph, item.id);
+  } else if (handle === 'rotate-opening') {
+    current.rotationChanged = rotateOpening(item, current.start, point, proportional);
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
   else resizeGroup(graph, items, handle, current.start, point, proportional);
 }
 
-function updateDrag(event) {
+function updateDrag(event, proportional = event.shiftKey) {
   const current = drag;
+  current.lastPointer = event;
   const screen = screenPoint(event);
   const movement = sub(screen, current.screen);
   if (!current.moved && lengthOf([0, 0], movement) < 3) return;
@@ -975,13 +1009,24 @@ function updateDrag(event) {
       return;
     }
     moveItems(graph, current, sub(point, current.start));
-  } else handleDrag(graph, current, point, event.shiftKey);
+  } else handleDrag(graph, current, point, proportional);
   state = { ...current.before, doc: graph };
   scheduleDraw();
 }
 
 let queuedMove = 0;
 let latestMove;
+function updateRotationModifier(free) {
+  if (drag?.handle !== 'rotate-opening') return;
+  const event = queuedMove ? latestMove : drag.lastPointer;
+  if (!event) return;
+  if (queuedMove) {
+    cancelAnimationFrame(queuedMove);
+    queuedMove = 0;
+  }
+  updateDrag(event, free);
+}
+
 stage.addEventListener('pointermove', event => {
   if (drag?.pointer === event.pointerId) {
     latestMove = event;
@@ -1037,7 +1082,8 @@ stage.addEventListener('pointerup', event => {
   drag = null;
   if (current.type === 'marquee') {
     finishMarquee(current, event.shiftKey);
-  } else if (current.type !== 'pan' && current.moved) {
+  } else if (current.type !== 'pan' && current.moved
+    && (current.handle !== 'rotate-opening' || current.rotationChanged)) {
     record(current.before);
     status(current.duplicate ? '図形を複製しました。' : '図形を更新しました。');
   }
@@ -1265,18 +1311,14 @@ function runAction(action, source) {
   else if (action === 'zoom-in') zoom(1.25);
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
-  else if (['flip-x', 'flip-y', 'rotate', 'rotate-forward', 'rotate-back'].includes(action)) {
+  else if (['flip-x', 'flip-y', 'rotate'].includes(action)) {
     const item = selectedObjects()[0];
     if (!item?.kind || !canEditItem(item)) return;
     commit(graph => {
       const target = graph.objects.find(object => object.id === item.id);
       if (action === 'flip-x') target.flipX = !target.flipX;
       else if (action === 'flip-y') target.flipY = !target.flipY;
-      else if (target.layer === 'opening') {
-        detach(target);
-        const step = action === 'rotate-back' ? -45 : 45;
-        target.angle = ((target.angle + step) % 360 + 360) % 360;
-      } else if (!target.wallId) target.angle = (target.angle + 90) % 360;
+      else if (!target.wallId) target.angle = (target.angle + 90) % 360;
     }, 'パーツの向きを変更しました。');
   }
 }
@@ -1455,9 +1497,12 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.altKey || fileBusy) return;
-  if (key === 'shift' && hover) {
-    hover.free = true;
-    scheduleDraw();
+  if (key === 'shift') {
+    updateRotationModifier(true);
+    if (hover) {
+      hover.free = true;
+      scheduleDraw();
+    }
   } else if (key === 'z') selectTool('zoom');
   else if (key === 'v') selectTool('select');
   else if (event.code === 'Space' && event.target === stage) {
@@ -1485,7 +1530,10 @@ function releaseFreeAngle() {
 window.addEventListener('keyup', event => {
   if (event.code === 'Space') stopSpace();
   if (event.key === 'Control' && !event.ctrlKey) setTemporarySelection(false);
-  if (event.key === 'Shift' && !event.shiftKey) releaseFreeAngle();
+  if (event.key === 'Shift' && !event.shiftKey) {
+    updateRotationModifier(false);
+    releaseFreeAngle();
+  }
 });
 window.addEventListener('blur', () => {
   stopSpace();

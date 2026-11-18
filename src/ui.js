@@ -130,6 +130,7 @@ export function layout() {
       <dl class="shortcut-list">
         <dt>Alt ＋ ドラッグ</dt><dd>選択した図形を複製して移動</dd>
         <dt>Shift ＋ 角をドラッグ</dt><dd>縦横比を保って拡大・縮小</dd>
+        <dt>窓・扉の角の外をドラッグ</dt><dd>45°刻みで回転。Shiftで自由に回転</dd>
         <dt>Shift ＋ 範囲をドラッグ</dt><dd>囲んだ図形を選択に追加</dd>
         <dt>Shift ＋ クリック</dt><dd>作図時は自由な角度、選択時は図形を追加</dd>
         <dt>Ctrl ＋ クリック</dt><dd>一時的に選択。壁の連続描画中は終了</dd>
@@ -190,8 +191,6 @@ export function propertyMarkup(item) {
       + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? stroke.defaultWidth, stroke.min, stroke.max, 0.01)
       + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
         <div class="property-actions opening-actions">
-          ${button('rotate-back', 'rotate', '左45°', 'button bordered compact', '左に45度回転')}
-          ${button('rotate-forward', 'rotate', '右45°', 'button bordered compact', '右に45度回転')}
           ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}
           ${button('flip-y', 'flip', '上下反転', 'button bordered compact')}
         </div>`;
