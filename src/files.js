@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, layers, lengthOf, OBJECT_LIMIT, parts, PROJECT_VERSION, roomColors, syncOpenings, uid } from './model.js';
+import { floors, layers, lengthOf, OBJECT_LIMIT, OPENING_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, uid } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 
@@ -60,6 +60,9 @@ function validateProject(doc, underlay, assetPath) {
         && number(item.angle) && number(item.w, 4, 50000) && number(item.h, 1, 50000)
         && flag(item.flipX) && flag(item.flipY));
       if (item.wallId !== undefined) ensure(item.layer === 'opening' && string(item.wallId, 120) && number(item.t, 0, 1));
+      if (item.strokeWidth !== undefined) {
+        ensure(item.layer === 'opening' && number(item.strokeWidth, OPENING_STROKE.min, OPENING_STROKE.max));
+      }
     }
   }
   for (const item of doc.objects) {
@@ -340,7 +343,9 @@ export async function exportSetup(doc, options, image, measuredHost) {
   ensure(width || height, '書き出す図形がありません。');
   const stroke = doc.layers.find(layer => layer.id === 'wall').visible
     ? doc.objects.reduce((max, item) => item.layer === 'wall' ? Math.max(max, item.width) : max, 0) : 0;
-  const pad = options.margin + Math.max(3, stroke / 2);
+  const partStroke = doc.layers.find(layer => layer.id === 'opening').visible
+    ? doc.objects.reduce((max, item) => item.layer === 'opening' ? Math.max(max, item.strokeWidth ?? 0) : max, 0) : 0;
+  const pad = options.margin + Math.max(3, stroke / 2, partStroke / 2);
   const box = { x: x - pad, y: y - pad, width: width + pad * 2, height: height + pad * 2 };
   return { drawing, box };
 }

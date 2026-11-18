@@ -1265,14 +1265,18 @@ function runAction(action, source) {
   else if (action === 'zoom-in') zoom(1.25);
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
-  else if (['flip-x', 'flip-y', 'rotate'].includes(action)) {
+  else if (['flip-x', 'flip-y', 'rotate', 'rotate-forward', 'rotate-back'].includes(action)) {
     const item = selectedObjects()[0];
     if (!item?.kind || !canEditItem(item)) return;
     commit(graph => {
       const target = graph.objects.find(object => object.id === item.id);
       if (action === 'flip-x') target.flipX = !target.flipX;
       else if (action === 'flip-y') target.flipY = !target.flipY;
-      else if (!target.wallId) target.angle = (target.angle + 90) % 360;
+      else if (target.layer === 'opening') {
+        detach(target);
+        const step = action === 'rotate-back' ? -45 : 45;
+        target.angle = ((target.angle + step) % 360 + 360) % 360;
+      } else if (!target.wallId) target.angle = (target.angle + 90) % 360;
     }, 'パーツの向きを変更しました。');
   }
 }

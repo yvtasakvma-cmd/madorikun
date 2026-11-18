@@ -115,6 +115,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inspector-placeholder { margin: 0; padding: 10px; border: 1px dashed #e1e9e3; border-radius: 6px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .inspector-name { display: block; overflow-wrap: anywhere; font-weight: 650; font-size: 12px; }
 .property-actions { display: flex; gap: 4px; }
+.opening-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.opening-actions .button { padding: 0 4px; font-size: 12px; gap: 4px; }
 .statusbar { justify-content: space-between; padding: 0 18px; gap: 8px; border-top: 1px solid var(--line); color: #54695e; font-size: 11px; }
 #status { display: flex; align-items: center; gap: 7px; min-width: 0; }
 #status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #5c9878; }

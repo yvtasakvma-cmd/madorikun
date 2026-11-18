@@ -1,4 +1,4 @@
-import { add, floors, lengthOf, rotate, wallJunctionCaps, wallSegments } from './model.js';
+import { add, floors, lengthOf, OPENING_STROKE, rotate, wallJunctionCaps, wallSegments } from './model.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -7,7 +7,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = OPENING_STROKE.defaultWidth) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -26,7 +26,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7) {
       body = frame + `<path d="M${x} 0V${x} A${-x} ${-x} 0 0 1 0 0M${-x} 0V${x} A${-x} ${-x} 0 0 0 0 0"/>`;
       break;
     case 'folding':
-      body = frame + `<path d="M${x} 0l${w / 4} ${-h} ${w / 4} ${h} ${w / 4} ${-h} ${w / 4} ${h}"/>`;
+      body = frame + `<path d="M${x} 0l${w / 5} ${-h} ${w / 5} ${h} ${w / 5} ${-h} ${w / 5} ${h}"/>`;
       break;
     case 'window':
       body = frame + line(x, 0, -x, 0) + line(0, -frameDepth / 2, 0, frameDepth / 2);
@@ -68,7 +68,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7) {
         + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z" fill="${stroke}"/>`;
       break;
   }
-  return `<g fill="none" stroke="${stroke}" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
+  return `<g fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
 }
 
 function pointInPolygon(point, polygon) {
@@ -259,7 +259,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else {
         const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${partDrawing(item.kind, item.w, item.h, mono, frame)}
+          ${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };

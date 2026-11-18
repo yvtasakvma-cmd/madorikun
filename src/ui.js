@@ -1,4 +1,4 @@
-import { floors, layers, parts, roomColors } from './model.js';
+import { floors, layers, OPENING_STROKE, parts, roomColors } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -184,6 +184,18 @@ export function propertyMarkup(item) {
   if (item.layer === 'text') return `<label class="stack-field">文字<textarea data-field="object-value" maxlength="500" rows="3">${escapeHtml(item.value)}</textarea></label>`
     + numberField('サイズ', 'object-size', item.size, 4, 300)
     + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
+  if (item.layer === 'opening') {
+    const stroke = OPENING_STROKE;
+    return numberField('幅', 'object-w', item.w, 4, 50000)
+      + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? stroke.defaultWidth, stroke.min, stroke.max, 0.01)
+      + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
+        <div class="property-actions opening-actions">
+          ${button('rotate-back', 'rotate', '左45°', 'button bordered compact', '左に45度回転')}
+          ${button('rotate-forward', 'rotate', '右45°', 'button bordered compact', '右に45度回転')}
+          ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}
+          ${button('flip-y', 'flip', '上下反転', 'button bordered compact')}
+        </div>`;
+  }
   return numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
     + (!item.wallId ? numberField('回転（°）', 'object-angle', item.angle, -360, 360) : '')

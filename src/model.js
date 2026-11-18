@@ -23,6 +23,8 @@ export const roomColors = {
   custom: { name: 'カスタム' },
 };
 
+export const OPENING_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
+
 export const parts = {
   swing: { name: '片開き戸', layer: 'opening', size: [50, 50] },
   double: { name: '両開き戸', layer: 'opening', size: [70, 35] },
