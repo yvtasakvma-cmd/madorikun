@@ -133,6 +133,7 @@ export function layout() {
         <dt>Shift ＋ 範囲をドラッグ</dt><dd>囲んだ図形を選択に追加</dd>
         <dt>Shift ＋ クリック</dt><dd>作図時は自由な角度、選択時は図形を追加</dd>
         <dt>Ctrl ＋ クリック</dt><dd>一時的に選択。壁の連続描画中は終了</dd>
+        <dt>Ctrl ＋ ダブルクリック</dt><dd>選択ツールに切り替え</dd>
         <dt>Space ＋ ドラッグ</dt><dd>キャンバスを移動</dd>
         <dt>Z</dt><dd>虫眼鏡に切り替え</dd>
         <dt>Ctrl ＋ 0 ／ −</dt><dd>全体表示 ／ 縮小</dd>

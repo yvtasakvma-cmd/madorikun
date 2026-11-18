@@ -135,11 +135,11 @@ function clearDraft() {
   draftPart = null;
 }
 
-function selectTool(next) {
+function selectTool(next, { keepSelection = false } = {}) {
   if (drag) cancelDrag();
   tool = next;
   clearDraft();
-  selection.clear();
+  if (!keepSelection) selection.clear();
   stage.focus({ preventScroll: true });
   renderAll();
 }
@@ -1042,6 +1042,11 @@ stage.addEventListener('pointerup', event => {
     status(current.duplicate ? '図形を複製しました。' : '図形を更新しました。');
   }
   renderAll();
+});
+stage.addEventListener('dblclick', event => {
+  if (!event.ctrlKey || event.button !== 0 || fileBusy || drag || tool === 'select') return;
+  event.preventDefault();
+  selectTool('select', { keepSelection: true });
 });
 stage.addEventListener('pointercancel', cancelDrag);
 stage.addEventListener('lostpointercapture', event => {
