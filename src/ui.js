@@ -1,4 +1,4 @@
-import { floors, layers, parts } from './model.js';
+import { floors, layers, parts, roomColors } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -150,6 +150,8 @@ export const selectField = (label, key, value, options) =>
 
 export const floorChoices = () => Object.entries(floors).map(([id, floor]) => [id, floor.name]);
 
+export const roomChoices = () => Object.entries(roomColors).map(([id, room]) => [id, room.name]);
+
 export const colorField = (key, fill) => `<label class="field color-field">塗り色<input type="color" value="${fill}" data-field="${key}"></label>`;
 
 export function partPalette(layer, current) {
@@ -169,12 +171,13 @@ export function propertyMarkup(item) {
   if (item.layer === 'wall') return numberField('太さ', 'object-width', item.width, 1, 80);
   if (item.layer === 'floor') {
     const pattern = floors[item.preset].pattern;
-    return selectField('種類', 'object-preset', item.preset, floorChoices()) + colorField('object-fill', item.fill)
+    return selectField('種類', 'object-preset', item.preset, floorChoices())
       + (pattern ? selectField('向き', 'object-direction', item.direction, [['vertical', '縦'], ['horizontal', '横']]) : '')
       + (pattern === 'boards' ? numberField('板の間隔', 'object-spacing', item.spacing, 3, 150) : '')
       + (pattern === 'tatami' ? selectField('畳の枚数', 'object-tatami', String(item.tatami), [['4', '4枚'], ['6', '6枚'], ['8', '8枚']]) : '');
   }
-  if (item.layer === 'color') return colorField('object-fill', item.fill);
+  if (item.layer === 'color') return selectField('部屋の種別', 'object-room', item.room, roomChoices())
+    + colorField('object-fill', item.fill);
   if (item.layer === 'text') return `<label class="stack-field">文字<textarea data-field="object-value" maxlength="500" rows="3">${escapeHtml(item.value)}</textarea></label>`
     + numberField('サイズ', 'object-size', item.size, 4, 300)
     + numberField('回転（°）', 'object-angle', item.angle, -360, 360);

@@ -113,11 +113,12 @@ function clippedPattern(polygon, vertical, position, low, high) {
   return path;
 }
 
-function floorPattern(item, mono) {
+function floorPattern(item, mono, interactive) {
   const pattern = floors[item.preset]?.pattern;
   if (!pattern) return '';
   const { x, y, width, height } = polygonBounds(item.points);
   const vertical = item.direction !== 'horizontal';
+  if (!width || !height) return '';
   const start = vertical ? x : y;
   const span = vertical ? width : height;
   const low = vertical ? y : x;
@@ -125,7 +126,7 @@ function floorPattern(item, mono) {
   let path = '';
   if (pattern === 'boards') {
     const spacing = Math.max(item.spacing, span / 500);
-    for (let offset = spacing; offset < span; offset += spacing) {
+    for (let offset = span <= spacing ? span / 2 : spacing; offset < span; offset += spacing) {
       path += clippedPattern(item.points, vertical, start + offset, low, high);
     }
   } else {
@@ -138,7 +139,8 @@ function floorPattern(item, mono) {
       path += clippedPattern(item.points, !vertical, pos, start, start + span);
     }
   }
-  return `<path d="${path}" fill="none" stroke="${mono ? '#000000' : pattern === 'boards' ? '#a19a79' : '#5e6c34'}" stroke-width="${pattern === 'boards' ? 0.8 : 1.25}"/>`;
+  const hit = interactive ? `<path d="${path}" fill="none" stroke="transparent" stroke-width="5"/>` : '';
+  return hit + `<path d="${path}" fill="none" stroke="${mono ? '#000000' : pattern === 'boards' ? '#8b8b83' : '#67675d'}" stroke-width="${pattern === 'boards' ? 0.8 : 1.25}"/>`;
 }
 
 export function objectBounds(item) {
@@ -197,7 +199,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
     if (!openings.has(item.wallId)) openings.set(item.wallId, []);
     openings.get(item.wallId).push(item);
   }
-  const fills = doc.layers.filter(layer => layer.visible && ['floor', 'color'].includes(layer.id))
+  const fills = doc.layers.filter(layer => layer.visible && layer.id === 'color')
     .flatMap(layer => grouped.get(layer.id));
   const color = mono ? '#000000' : ink;
   const drawings = doc.layers.filter(layer => layer.visible).flatMap(layer => {
@@ -211,9 +213,10 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
     }
     return grouped.get(layer.id).map(item => {
       let drawing = '';
-      if (item.layer === 'floor' || item.layer === 'color') {
+      if (item.layer === 'floor') {
+        drawing = floorPattern(item, mono, entries);
+      } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
-        if (item.layer === 'floor') drawing += floorPattern(item, mono);
       } else if (item.layer === 'wall') {
         const segments = wallSegments(item, openings.get(item.id));
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');

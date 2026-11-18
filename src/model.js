@@ -1,7 +1,7 @@
 export const layers = [
   { id: 'underlay', name: '下絵', icon: 'file', swatch: '#a0a9b6' },
-  { id: 'floor', name: '床', icon: 'floor', swatch: '#e9cc77' },
   { id: 'color', name: '色', icon: 'palette', swatch: '#daa499' },
+  { id: 'floor', name: '床', icon: 'floor', swatch: '#e9cc77' },
   { id: 'wall', name: '壁', icon: 'wall', swatch: '#303630' },
   { id: 'opening', name: '窓・扉', icon: 'door', swatch: '#a99b83' },
   { id: 'fixture', name: '設備', icon: 'bath', swatch: '#88bbc9' },
@@ -9,12 +9,18 @@ export const layers = [
 ];
 
 export const floors = {
-  wood: { name: '洋室・LDK', color: '#f7efc3', pattern: 'boards' },
-  tatami: { name: '和室', color: '#d3e48d', pattern: 'tatami' },
-  wet: { name: '水回り', color: '#c8e8f3', pattern: '' },
-  storage: { name: '収納', color: '#f2d0c4', pattern: '' },
-  entry: { name: '玄関・バルコニー', color: '#e8e8ea', pattern: '' },
-  plain: { name: '無地', color: '#ffffff', pattern: '' },
+  wood: { name: 'フローリング', pattern: 'boards' },
+  tatami: { name: '畳', pattern: 'tatami' },
+};
+
+export const roomColors = {
+  western: { name: '洋室・LDK・廊下', color: '#f7efc3' },
+  japanese: { name: '和室', color: '#d3e48d' },
+  wet: { name: '水回り', color: '#c8e8f3' },
+  storage: { name: '収納', color: '#f2d0c4' },
+  entry: { name: '玄関', color: '#e8e8ea' },
+  balcony: { name: 'バルコニー', color: '#e8e8ea' },
+  custom: { name: 'カスタム' },
 };
 
 export const parts = {
@@ -43,7 +49,8 @@ export const rotate = ([x, y], angle) => {
 export const add = (a, b) => a.map((x, i) => x + b[i]);
 export const sub = (a, b) => a.map((x, i) => x - b[i]);
 
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
+export const OBJECT_LIMIT = 10000;
 
 export function blank() {
   return {

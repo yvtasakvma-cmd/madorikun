@@ -1,7 +1,7 @@
 import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
-  add, blank, clamp, detach, floors, layers, lengthOf, makePart, parts, positionOpening,
+  add, blank, clamp, detach, floors, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
   projectOnWall, rotate, sub, syncOpenings, uid,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
@@ -10,7 +10,7 @@ import {
 } from './files.js';
 import {
   colorField, floorChoices, icon, importButton, layout, numberField, partPalette,
-  propertyMarkup, removeButton, selectField, tools,
+  propertyMarkup, removeButton, roomChoices, selectField, tools,
 } from './ui.js';
 
 document.fonts.add(new FontFace('Madori Drawing', `url("${fontUrl}")`));
@@ -33,7 +33,7 @@ const undoStack = [];
 const redoStack = [];
 let tool = 'select';
 const selection = new Set();
-let defaults = { width: 8, preset: 'wood', fill: floors.wood.color, color: '#f2d0c4', direction: 'vertical', tatami: 6, spacing: 12, size: 18 };
+let defaults = { width: 8, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18 };
 let activeParts = { opening: 'swing', fixture: 'bath' };
 let pending = [];
 let hover = null;
@@ -154,12 +154,13 @@ function renderContext() {
   if (tool === 'wall') controls = numberField('太さ', 'default-width', defaults.width, 1, 80);
   if (tool === 'floor') {
     const { pattern } = floors[defaults.preset];
-    controls = selectField('種類', 'default-preset', defaults.preset, floorChoices()) + colorField('default-fill', defaults.fill);
+    controls = selectField('種類', 'default-preset', defaults.preset, floorChoices());
     if (pattern) controls += selectField('向き', 'default-direction', defaults.direction, [['vertical', '縦'], ['horizontal', '横']]);
     if (pattern === 'boards') controls += numberField('板の間隔', 'default-spacing', defaults.spacing, 3, 150);
     if (pattern === 'tatami') controls += selectField('畳の枚数', 'default-tatami', String(defaults.tatami), [['4', '4枚'], ['6', '6枚'], ['8', '8枚']]);
   }
-  if (tool === 'color') controls = colorField('default-color', defaults.color);
+  if (tool === 'color') controls = selectField('部屋の種別', 'default-room', defaults.room, roomChoices())
+    + colorField('default-color', defaults.color);
   if (tool === 'text') controls = numberField('サイズ', 'default-size', defaults.size, 4, 300);
   if (tool === 'opening' || tool === 'fixture') controls = partPalette(tool, activeParts[tool])
     + '<span class="context-hint">パーツをキャンバスへドラッグ</span>';
@@ -319,7 +320,7 @@ function draftMarkup() {
   if (pending.length) {
     const points = [...pending, ...(hover ? [hover] : [])];
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
-      fill="${tool === 'wall' ? 'none' : '#bbdacf'}" fill-opacity=".35" stroke="#23876d"
+      fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
     for (const [x, y] of pending) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
   }
@@ -432,8 +433,8 @@ function addItem(item, message) {
     status('「' + names(item.layer) + '」レイヤーの表示とロックを確認してください。', true);
     return;
   }
-  if (doc().objects.length >= 5000) {
-    status('初版の図形数の上限は5,000個です。', true);
+  if (doc().objects.length >= OBJECT_LIMIT) {
+    status('図形数の上限は' + OBJECT_LIMIT.toLocaleString('ja-JP') + '個です。', true);
     return;
   }
   selection.clear();
@@ -460,10 +461,11 @@ function finishPolygon() {
     scheduleDraw();
     return;
   }
-  const item = { id: uid(), layer: tool, points, fill: tool === 'floor' ? defaults.fill : defaults.color };
+  const item = { id: uid(), layer: tool, points };
   if (tool === 'floor') Object.assign(item, {
     preset: defaults.preset, direction: defaults.direction, spacing: defaults.spacing, tatami: defaults.tatami,
   });
+  else Object.assign(item, { room: defaults.room, fill: defaults.color });
   addItem(item, names(tool) + 'を追加しました。');
 }
 
@@ -562,7 +564,7 @@ function moveItems(copy, current, delta) {
   const chosen = new Set(current.ids);
   let items = copy.objects.filter(item => chosen.has(item.id));
   if (current.duplicate) {
-    if (copy.objects.length + items.length > 5000) return;
+    if (copy.objects.length + items.length > OBJECT_LIMIT) return;
     for (const item of items) if (!current.copyIds.has(item.id)) current.copyIds.set(item.id, uid());
     items = items.map(source => {
       const item = structuredClone(source);
@@ -682,7 +684,7 @@ function updateDrag(event) {
   const graph = structuredClone(current.before.doc);
   if (current.type === 'move') {
     current.copyIds ??= new Map();
-    if (current.duplicate && graph.objects.length + current.ids.length > 5000) {
+    if (current.duplicate && graph.objects.length + current.ids.length > OBJECT_LIMIT) {
       current.moved = false;
       return;
     }
@@ -983,7 +985,8 @@ function fieldValue(input) {
 function modifyObject(id, key, value) {
   commit(graph => {
     const target = graph.objects.find(item => item.id === id);
-    if (key === 'preset') Object.assign(target, { preset: value, fill: floors[value].color });
+    if (key === 'room') Object.assign(target, { room: value, fill: roomColors[value].color ?? target.fill });
+    else if (key === 'fill') Object.assign(target, { room: 'custom', fill: value });
     else if (key === 'tatami') target.tatami = Number(value);
     else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);
@@ -1018,7 +1021,8 @@ document.addEventListener('change', event => {
   const [group, key] = input.dataset.field.split('-');
   if (group === 'default') {
     defaults[key] = key === 'tatami' ? Number(value) : value;
-    if (key === 'preset') defaults.fill = floors[value].color;
+    if (key === 'room') defaults.color = roomColors[value].color ?? defaults.color;
+    if (key === 'color') defaults.room = 'custom';
     renderContext();
     scheduleDraw();
   } else if (group === 'object') {

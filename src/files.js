@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, layers, lengthOf, parts, PROJECT_VERSION, syncOpenings } from './model.js';
+import { floors, layers, lengthOf, OBJECT_LIMIT, parts, PROJECT_VERSION, roomColors, syncOpenings, uid } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 
@@ -28,12 +28,13 @@ function ensure(condition, message = '制作ファイルの内容に誤りがあ
 
 function validateProject(doc, underlay, assetPath) {
   ensure(doc && typeof doc === 'object');
-  ensure([1, PROJECT_VERSION].includes(doc.version), 'この制作ファイルの形式バージョンには対応していません。');
+  ensure([1, 2, PROJECT_VERSION].includes(doc.version), 'この制作ファイルの形式バージョンには対応していません。');
   ensure(string(doc.name, 120) && number(doc.width, 100, 100000) && number(doc.height, 100, 100000));
   ensure(Array.isArray(doc.layers) && doc.layers.length === layers.length);
   const layerIds = new Set(layers.map(layer => layer.id));
   for (const layer of doc.layers) ensure(layer && layerIds.delete(layer.id) && flag(layer.visible) && flag(layer.locked));
-  ensure(Array.isArray(doc.objects) && doc.objects.length <= 5000, '図形の情報が無効か、5,000個を超えています。');
+  const legacy = doc.version < PROJECT_VERSION;
+  ensure(Array.isArray(doc.objects) && doc.objects.length <= (legacy ? 5000 : OBJECT_LIMIT), '図形の情報または数に問題があります。');
   const ids = new Map();
   for (const item of doc.objects) {
     ensure(item && string(item.id, 120) && item.id.length && item.id !== 'underlay' && !ids.has(item.id));
@@ -42,8 +43,11 @@ function validateProject(doc, underlay, assetPath) {
       ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
     } else if (item.layer === 'floor' || item.layer === 'color') {
       ensure(Array.isArray(item.points) && item.points.length >= 3 && item.points.length <= 1000
-        && item.points.every(point) && hex(item.fill));
-      if (item.layer === 'floor') ensure(Object.hasOwn(floors, item.preset)
+        && item.points.every(point));
+      if (legacy || item.layer === 'color') ensure(hex(item.fill));
+      if (!legacy && item.layer === 'color') ensure(Object.hasOwn(roomColors, item.room));
+      const oldSolidFloor = legacy && ['wet', 'storage', 'entry', 'plain'].includes(item.preset);
+      if (item.layer === 'floor') ensure((Object.hasOwn(floors, item.preset) || oldSolidFloor)
         && ['vertical', 'horizontal'].includes(item.direction) && [4, 6, 8].includes(item.tatami)
         && number(item.spacing, 3, 150));
     } else if (item.layer === 'text') {
@@ -104,6 +108,44 @@ function directoryEntries(bytes) {
   return entries;
 }
 
+function migrateProject(doc) {
+  if (doc.version === PROJECT_VERSION) return;
+  if (doc.version === 1 && doc.underlay) doc.underlay.format = 'pdf';
+
+  const floorIndex = doc.layers.findIndex(layer => layer.id === 'floor');
+  const colorIndex = doc.layers.findIndex(layer => layer.id === 'color');
+  const floorLayer = doc.layers[floorIndex];
+  const colorLayer = doc.layers[colorIndex];
+  if (!doc.objects.some(item => item.layer === 'color')) {
+    Object.assign(colorLayer, { visible: floorLayer.visible, locked: floorLayer.locked });
+  }
+  if (floorIndex < colorIndex) {
+    [doc.layers[floorIndex], doc.layers[colorIndex]] = [colorLayer, floorLayer];
+  }
+
+  const roomForFill = fill => Object.keys(roomColors).find(key => roomColors[key].color === fill.toLowerCase()) ?? 'custom';
+  const oldFloorColors = [];
+  const objects = [];
+  const usedIds = new Set(doc.objects.map(item => item.id));
+  for (const item of doc.objects) {
+    if (item.layer !== 'floor') {
+      if (item.layer === 'color') item.room = roomForFill(item.fill);
+      objects.push(item);
+      continue;
+    }
+    const { fill, ...pattern } = item;
+    let id = item.id;
+    if (Object.hasOwn(floors, item.preset)) {
+      objects.push(pattern);
+      do { id = uid(); } while (usedIds.has(id));
+      usedIds.add(id);
+    }
+    oldFloorColors.push({ id, layer: 'color', points: structuredClone(item.points), fill, room: roomForFill(fill) });
+  }
+  doc.objects = [...oldFloorColors, ...objects];
+  doc.version = PROJECT_VERSION;
+}
+
 export async function readProject(file) {
   ensure(file.size <= PROJECT_LIMIT, '制作ファイルは64 MBまでです。');
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -122,10 +164,7 @@ export async function readProject(file) {
   const assetPath = [...entries.keys()].find(name => name !== 'project.json');
   const underlay = assetPath ? decoded[assetPath] : null;
   validateProject(doc, underlay, assetPath);
-  if (doc.version === 1) {
-    if (doc.underlay) doc.underlay.format = 'pdf';
-    doc.version = PROJECT_VERSION;
-  }
+  migrateProject(doc);
   for (const wall of doc.objects.filter(object => object.layer === 'wall')) syncOpenings(doc, wall.id);
   return { doc, underlay };
 }
