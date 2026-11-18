@@ -1,0 +1,287 @@
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import CRC32 from 'crc-32';
+import { floors, layers, lengthOf, parts, syncOpenings } from './model.js';
+import { renderScene, svgDocument } from './scene.js';
+import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
+
+const MB = 1024 * 1024;
+export const PDF_LIMIT = 50 * MB;
+const JSON_LIMIT = 12 * MB;
+export const PROJECT_LIMIT = 64 * MB;
+const assetLimits = new Map([['project.json', JSON_LIMIT], ['assets/underlay.pdf', PDF_LIMIT]]);
+const number = (value, min = -1e6, max = 1e6) => Number.isFinite(value) && value >= min && value <= max;
+const integer = (value, min, max) => Number.isInteger(value) && number(value, min, max);
+const point = value => Array.isArray(value) && value.length === 2 && value.every(n => number(n));
+const flag = value => typeof value === 'boolean';
+const hex = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
+const string = (value, max) => typeof value === 'string' && value.length <= max;
+
+function ensure(condition, message = '制作ファイルの内容に誤りがあります。') {
+  if (!condition) throw new Error(message);
+}
+
+export function validateProject(doc, pdf) {
+  ensure(doc && typeof doc === 'object');
+  ensure(doc.version === 1, 'この制作ファイルの形式バージョンには対応していません。');
+  ensure(string(doc.name, 120) && number(doc.width, 100, 100000) && number(doc.height, 100, 100000));
+  ensure(Array.isArray(doc.layers) && doc.layers.length === layers.length);
+  const layerIds = new Set(layers.map(layer => layer.id));
+  for (const layer of doc.layers) ensure(layer && layerIds.delete(layer.id) && flag(layer.visible) && flag(layer.locked));
+  ensure(Array.isArray(doc.objects) && doc.objects.length <= 5000, '図形の情報が無効か、5,000個を超えています。');
+  const ids = new Map();
+  for (const item of doc.objects) {
+    ensure(item && string(item.id, 120) && item.id.length && item.id !== 'underlay' && !ids.has(item.id));
+    ids.set(item.id, item);
+    if (item.layer === 'wall') {
+      ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
+    } else if (item.layer === 'floor' || item.layer === 'color') {
+      ensure(Array.isArray(item.points) && item.points.length >= 3 && item.points.length <= 1000
+        && item.points.every(point) && hex(item.fill));
+      if (item.layer === 'floor') ensure(Object.hasOwn(floors, item.preset)
+        && ['vertical', 'horizontal'].includes(item.direction) && [4, 6, 8].includes(item.tatami)
+        && number(item.spacing, 3, 150));
+    } else if (item.layer === 'text') {
+      ensure(point(item.at) && string(item.value, 500) && number(item.size, 4, 300) && number(item.angle));
+    } else {
+      ensure(Object.hasOwn(parts, item.kind) && parts[item.kind].layer === item.layer && point(item.at)
+        && number(item.angle) && number(item.w, 4, 50000) && number(item.h, 1, 50000)
+        && flag(item.flipX) && flag(item.flipY));
+      if (item.wallId !== undefined) ensure(item.layer === 'opening' && string(item.wallId, 120) && number(item.t, 0, 1));
+    }
+  }
+  for (const item of doc.objects) {
+    if (item.wallId === undefined) continue;
+    const wall = ids.get(item.wallId);
+    ensure(wall?.layer === 'wall' && lengthOf(wall.a, wall.b) + 0.001 >= item.w, '建具と壁の対応が正しくありません。');
+  }
+  if (doc.underlay !== null) {
+    const info = doc.underlay;
+    ensure(pdf?.length, '下絵のPDFが制作ファイルに入っていません。');
+    ensure(info && string(info.name, 255) && integer(info.page, 1, 100000) && point(info.at)
+      && number(info.angle) && number(info.scale, 0.01, 50) && number(info.opacity, 0, 1)
+      && number(info.naturalWidth, 1, 100000) && number(info.naturalHeight, 1, 100000));
+  } else ensure(!pdf, '下絵の参照情報がありません。');
+  return doc;
+}
+
+// Read the central directory before inflating. Only v1 filenames and bounded
+// decoded sizes are accepted, and the inflated contents must match their CRCs.
+function directoryEntries(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = bytes.length - 22;
+  while (end >= Math.max(0, bytes.length - 65557)) {
+    if (view.getUint32(end, true) === 0x06054b50 && end + 22 + view.getUint16(end + 20, true) === bytes.length) break;
+    end--;
+  }
+  ensure(end >= 0 && end >= bytes.length - 65557, 'ZIPが壊れています。');
+  ensure(view.getUint32(end + 4, true) === 0, '分割ZIPには対応していません。');
+  const count = view.getUint16(end + 10, true);
+  const directorySize = view.getUint32(end + 12, true);
+  let offset = view.getUint32(end + 16, true);
+  ensure(count > 0 && count <= 2 && offset + directorySize === end && view.getUint16(end + 8, true) === count);
+  const entries = new Map();
+  for (let i = 0; i < count; i++) {
+    ensure(offset + 46 <= end && view.getUint32(offset, true) === 0x02014b50);
+    const length = view.getUint16(offset + 28, true);
+    const next = offset + 46 + length + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
+    ensure(next <= end && (view.getUint16(offset + 8, true) & 1) === 0);
+    const name = strFromU8(bytes.subarray(offset + 46, offset + 46 + length));
+    const size = view.getUint32(offset + 24, true);
+    const crc = view.getUint32(offset + 16, true);
+    ensure(assetLimits.has(name) && !entries.has(name) && size <= assetLimits.get(name), '制作ファイルの構成またはサイズに問題があります。');
+    entries.set(name, { size, crc });
+    offset = next;
+  }
+  ensure(offset === end && entries.has('project.json'));
+  return entries;
+}
+
+export async function readProject(file) {
+  ensure(file.size <= PROJECT_LIMIT, '制作ファイルは64 MBまでです。');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const entries = directoryEntries(bytes);
+  const decoded = unzipSync(bytes, { filter: entry => entries.get(entry.name)?.size === entry.originalSize });
+  for (const [name, { size, crc }] of entries) {
+    const data = decoded[name];
+    ensure(data?.length === size && (CRC32.buf(data) >>> 0) === crc, '制作ファイルが破損しています。');
+  }
+  let doc;
+  try {
+    doc = JSON.parse(strFromU8(decoded['project.json']));
+  } catch {
+    throw new Error('図面データのJSONを読み込めません。');
+  }
+  const pdf = decoded['assets/underlay.pdf'] ?? null;
+  validateProject(doc, pdf);
+  for (const wall of doc.objects.filter(object => object.layer === 'wall')) syncOpenings(doc, wall.id);
+  return { doc, pdf };
+}
+
+export function saveProject(doc, pdf) {
+  validateProject(doc, pdf);
+  const json = strToU8(JSON.stringify(doc));
+  ensure(json.length <= JSON_LIMIT, '図面データが大きすぎます。');
+  if (pdf) ensure(pdf.length <= PDF_LIMIT, '下絵PDFは50 MBまでです。');
+  const files = { 'project.json': json };
+  if (pdf) files['assets/underlay.pdf'] = [pdf, { level: 0 }];
+  return new Blob([zipSync(files)], { type: 'application/zip' });
+}
+
+let pdfEngine;
+async function loadPdfEngine() {
+  if (!pdfEngine) {
+    pdfEngine = Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')])
+      .then(([engine, worker]) => {
+        engine.GlobalWorkerOptions.workerSrc = worker.default;
+        return engine;
+      }).catch(error => { pdfEngine = null; throw error; });
+  }
+  return pdfEngine;
+}
+
+export async function openPdf(bytes) {
+  ensure(bytes?.length > 0 && bytes.length <= PDF_LIMIT, '下絵PDFは50 MBまでです。');
+  const engine = await loadPdfEngine();
+  const base = new URL('pdfjs/', document.baseURI).href;
+  const task = engine.getDocument({
+    data: bytes.slice(), cMapUrl: base + 'cmaps/', cMapPacked: true,
+    standardFontDataUrl: base + 'standard_fonts/', wasmUrl: base + 'wasm/', iccUrl: base + 'iccs/',
+    isEvalSupported: false,
+  });
+  try {
+    return await task.promise;
+  } catch (error) {
+    await task.destroy().catch(() => {});
+    if (error.name === 'PasswordException') throw new Error('パスワード保護されたPDFは、保護を解除してから読み込んでください。');
+    throw new Error('PDFを読み込めませんでした。ファイルを確認してください。');
+  }
+}
+
+export async function rasterPdfPage(pdf, pageNumber) {
+  const page = await pdf.getPage(pageNumber);
+  const { width, height } = page.getViewport({ scale: 1 });
+  ensure(number(width, 1, 100000) && number(height, 1, 100000), 'PDFページのサイズに対応していません。');
+  const viewport = page.getViewport({ scale: Math.min(3, 2400 / Math.max(width, height)) });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  await page.render({ canvas, viewport, background: '#ffffff' }).promise;
+  const image = await canvasBlob(canvas, 'image/png');
+  page.cleanup();
+  return { width, height, image };
+}
+
+export function canvasBlob(canvas, mime, quality) {
+  return new Promise((resolve, reject) => canvas.toBlob(blob => {
+    if (blob) resolve(blob);
+    else reject(new Error('画像を生成できませんでした。'));
+  }, mime, quality));
+}
+
+export function download(blob, name, extension) {
+  const safeName = name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || '間取り図';
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeName + '.' + extension;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+let fontPromise;
+function outlineFont() {
+  if (!fontPromise) {
+    fontPromise = Promise.all([import('opentype.js'), fetch(fontUrl)])
+      .then(async ([opentype, response]) => {
+        ensure(response.ok, '書き出し用フォントを読み込めませんでした。');
+        return opentype.parse(await response.arrayBuffer());
+      }).catch(error => { fontPromise = null; throw error; });
+  }
+  return fontPromise;
+}
+
+function toDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('下絵の読み込みに失敗しました。'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function monochromeImage(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const { data } = pixels;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    data[i] = gray;
+    data[i + 1] = gray;
+    data[i + 2] = gray;
+  }
+  context.putImageData(pixels, 0, 0);
+  return canvasBlob(canvas, 'image/png');
+}
+
+export async function exportSetup(doc, options, image, measuredHost) {
+  const { mono, includeUnderlay } = options;
+  const font = doc.layers.find(layer => layer.id === 'text').visible && doc.objects.some(item => item.layer === 'text')
+    ? await outlineFont() : null;
+  const underlayImage = includeUnderlay && image ? await toDataUrl(mono ? await monochromeImage(image) : image) : '';
+  const drawing = renderScene(doc, { mono, showUnderlay: includeUnderlay, underlayImage, font });
+  ensure(drawing.trim(), '書き出す図形がありません。表示中のレイヤーを確認してください。');
+  measuredHost.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g>' + drawing + '</g></svg>';
+  const group = measuredHost.querySelector('g');
+  const { x, y, width, height } = group.getBBox();
+  measuredHost.replaceChildren();
+  ensure(width || height, '書き出す図形がありません。');
+  const stroke = doc.layers.find(layer => layer.id === 'wall').visible
+    ? doc.objects.reduce((max, item) => item.layer === 'wall' ? Math.max(max, item.width) : max, 0) : 0;
+  const pad = options.margin + Math.max(3, stroke / 2);
+  const box = { x: x - pad, y: y - pad, width: width + pad * 2, height: height + pad * 2 };
+  return { drawing, box };
+}
+
+export async function makeExport({ drawing, box }, options) {
+  if (options.format === 'svg') return new Blob([svgDocument(drawing, box)], { type: 'image/svg+xml;charset=utf-8' });
+  if (options.format === 'pdf') {
+    const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: box.width > box.height ? 'landscape' : 'portrait', compress: true });
+    const margin = 10;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const scale = Math.min((pageWidth - 2 * margin) / box.width, (pageHeight - 2 * margin) / box.height);
+    const width = box.width * scale;
+    const height = box.height * scale;
+    const element = new DOMParser().parseFromString(svgDocument(drawing, box), 'image/svg+xml').documentElement;
+    await pdf.svg(element, { x: (pageWidth - width) / 2, y: (pageHeight - height) / 2, width, height });
+    return pdf.output('blob');
+  }
+  const scale = options.pixels / Math.max(box.width, box.height);
+  const width = Math.max(1, Math.round(box.width * scale));
+  const height = Math.max(1, Math.round(box.height * scale));
+  const url = URL.createObjectURL(new Blob([svgDocument(drawing, box, width, height)], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return await canvasBlob(canvas, options.format === 'jpg' ? 'image/jpeg' : 'image/png', options.quality / 100);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
