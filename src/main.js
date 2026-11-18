@@ -336,6 +336,8 @@ function draftMarkup() {
     for (const [x, y] of vertices) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
     if (closing) markup += snapMarker(vertices[0], 'closing-target');
     if (wall?.target) markup += snapMarker(wall.target, 'wall-snap-target');
+  } else if (!temporarySelection && tool === 'wall' && hover?.wallTarget) {
+    markup += snapMarker(hover.wallTarget, 'wall-snap-target');
   }
   if (draftPart) {
     const draftDoc = { ...doc(), objects: [draftPart] };
@@ -431,6 +433,21 @@ function snapWallPoint(point, { excluded, origin, free = false }) {
   return endpoint ? [...endpoint] : free ? point : snapDrawingAngle(point, origin);
 }
 
+function wallSnapTarget(point, stickyTarget, accepts) {
+  if (stickyTarget && lengthOf(stickyTarget, point) * view.scale <= SNAP_RELEASE_RADIUS
+    && (!accepts || accepts(stickyTarget))) return stickyTarget;
+  return nearestWallEndpoint(point, { radius: SNAP_RADIUS, accepts });
+}
+
+function updateDraftHover(point, free) {
+  const stickyTarget = hover?.wallTarget;
+  const wallTarget = tool !== 'wall' ? null : pending.length
+    ? wallDraft(point, free, stickyTarget).target
+    : wallSnapTarget(point, stickyTarget);
+  hover = { point, free, atStart: isClosingPoint(point), wallTarget };
+  scheduleDraw();
+}
+
 function wallDraft(point, free, stickyTarget) {
   const start = pending[0];
   const anchored = !free && nearestWallEndpoint(start, { radius: 0.01 });
@@ -441,8 +458,7 @@ function wallDraft(point, free, stickyTarget) {
     const aligned = snapDrawingAngle(start, target);
     return lengthOf(aligned, start) * view.scale <= SNAP_RADIUS ? aligned : null;
   }
-  const target = stickyTarget && lengthOf(stickyTarget, point) * view.scale <= SNAP_RELEASE_RADIUS && startFor(stickyTarget)
-    ? stickyTarget : nearestWallEndpoint(point, { radius: SNAP_RADIUS, accepts: startFor });
+  const target = wallSnapTarget(point, stickyTarget, startFor);
   return target ? { start: startFor(target), end: [...target], target }
     : { start, end: free ? point : snapDrawingAngle(point, start), target: null };
 }
@@ -538,10 +554,12 @@ function drawingClick(event, point) {
   }
   if (tool === 'wall') {
     if (!pending.length) {
-      const target = nearestWallEndpoint(point, { radius: SNAP_RADIUS });
+      const target = wallSnapTarget(point, hover?.wallTarget);
       pending = [target ? [...target] : point];
+      hover = null;
     } else if (wallEndClick && Math.min(lengthOf(point, pending[0]), lengthOf(point, wallEndClick)) * view.scale <= 6) {
       finishWallChain();
+      updateDraftHover(point, event.shiftKey);
     } else {
       const { start, end } = wallDraft(point, event.shiftKey, hover?.wallTarget);
       if (lengthOf(start, end) >= 1 && addItem({ id: uid(), layer: 'wall', a: start, b: end, width: defaults.width }, '壁を追加しました。')) {
@@ -804,11 +822,8 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if (pending.length) {
-    const point = toWorld(screenPoint(event));
-    const wallTarget = tool === 'wall' ? wallDraft(point, event.shiftKey, hover?.wallTarget).target : null;
-    hover = { point, free: event.shiftKey, atStart: isClosingPoint(point), wallTarget };
-    scheduleDraw();
+  } else if (pending.length || (tool === 'wall' && editable('wall'))) {
+    updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
   }
 });
 
