@@ -1,7 +1,7 @@
 import './style.css';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
-  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  projectOnWall, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelArea, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, wallDrawingGeometry,
@@ -11,7 +11,7 @@ import {
 } from './files.js';
 import {
   checkField, colorField, floorChoices, fontChoices, icon, importButton, layout, numberField, partPalette,
-  propertyMarkup, removeButton, roomChoices, selectField, partDesignChoices, tools,
+  propertyMarkup, removeButton, roomChoices, roomLabelPalette, selectField, partDesignChoices, tools,
 } from './ui.js';
 
 document.querySelector('#app').innerHTML = layout();
@@ -37,6 +37,7 @@ let tool = 'select';
 const selection = new Set();
 let defaults = { width: 8, dashed: false, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
+let activeRoomLabel = '';
 const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, design]) => [kind, design.default]));
 let pending = [];
 let wallChain = null;
@@ -154,7 +155,7 @@ function fieldInstructions() {
     wall: 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
-    text: '配置する場所をクリックして入力',
+    text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
   return label ? `<span class="context-hint">${label}</span>` : '';
@@ -174,7 +175,8 @@ function renderContext() {
   }
   if (tool === 'color') controls = selectField('部屋の種別', 'default-room', defaults.room, roomChoices())
     + colorField('default-color', defaults.color);
-  if (tool === 'text') controls = selectField('書体', 'default-font', defaults.font, fontChoices())
+  if (tool === 'text') controls = roomLabelPalette(activeRoomLabel)
+    + selectField('書体', 'default-font', defaults.font, fontChoices())
     + numberField('サイズ', 'default-size', defaults.size, 4, 300);
   if (Object.hasOwn(activeParts, tool)) controls = partPalette(tool, activeParts[tool], partDesigns)
     + '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>';
@@ -242,6 +244,13 @@ function renderEditStatus() {
 
 function renderTextEdit() {
   // Keep the input and the adjacent font select mounted while focus changes.
+  const areaField = inspector.querySelector('[data-room-area]');
+  if (areaField) {
+    const editor = inspector.querySelector(TEXT_INPUT);
+    const area = roomLabelArea(itemBy(editor.dataset.objectId)?.value ?? '');
+    areaField.hidden = area === null;
+    if (area !== null) areaField.querySelector('input').value = area;
+  }
   renderEditStatus();
   scheduleDraw();
 }
@@ -488,7 +497,7 @@ function textCaretMarkup(item, editor) {
 function draw() {
   drawFrame = 0;
   stage.classList.toggle('part-placement-cursor',
-    Object.hasOwn(activeParts, tool) && draftPart?.layer === tool && !temporarySelection && !drag && !draggedKind);
+    draftPart?.layer === tool && !temporarySelection && !drag && !draggedKind);
   const wall = !temporarySelection && tool === 'wall' && pending.length && hover
     ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
   let graph = doc();
@@ -718,10 +727,22 @@ function partAt(kind, point) {
   return part;
 }
 
-function placePart(kind, point) {
-  if (!Object.hasOwn(parts, kind)) return;
-  const part = partAt(kind, point);
-  if (addItem(part, parts[kind].name + 'を配置しました。')) {
+function textAt(point, value) {
+  return { id: uid(), layer: 'text', at: point, value, size: defaults.size, font: defaults.font, angle: 0 };
+}
+
+function paletteItemAt(kind, point) {
+  if (Object.hasOwn(ROOM_LABELS, kind)) {
+    return textAt(point, roomLabelText(ROOM_LABELS[kind], ROOM_LABEL_TATAMI.initial));
+  }
+  if (Object.hasOwn(parts, kind)) return partAt(kind, point);
+  return null;
+}
+
+function placePaletteItem(kind, point) {
+  const item = paletteItemAt(kind, point);
+  const name = item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
+  if (item && addItem(item, name + 'を配置しました。')) {
     tool = 'select';
     clearDraft();
     renderAll();
@@ -794,15 +815,19 @@ function drawingClick(event, point) {
       }
     }
   } else if (tool === 'text') {
+    if (activeRoomLabel) {
+      placePaletteItem(activeRoomLabel, point);
+      return;
+    }
     // Suppress the canvas's default mouse focus after focusing the editor.
     event.preventDefault();
-    if (addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, font: defaults.font, angle: 0 }, '文字を追加しました。')) {
+    if (addItem(textAt(point, '部屋名'), '文字を追加しました。')) {
       const editor = inspector.querySelector(TEXT_INPUT);
       editor.focus();
       editor.select();
     }
   } else if (Object.hasOwn(activeParts, tool)) {
-    placePart(activeParts[tool], point);
+    placePaletteItem(activeParts[tool], point);
   }
   scheduleDraw();
 }
@@ -1120,8 +1145,8 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if (Object.hasOwn(activeParts, tool) && editable(tool) && !fileBusy) {
-    draftPart = partAt(activeParts[tool], toWorld(screenPoint(event)));
+  } else if ((Object.hasOwn(activeParts, tool) || (tool === 'text' && activeRoomLabel)) && editable(tool) && !fileBusy) {
+    draftPart = paletteItemAt(tool === 'text' ? activeRoomLabel : activeParts[tool], toWorld(screenPoint(event)));
     scheduleDraw();
   } else if (pending.length || (tool === 'wall' && editable('wall'))) {
     updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
@@ -1444,8 +1469,9 @@ document.addEventListener('click', event => {
       selection.add('underlay');
       renderAll();
     }
-  } else if (source.dataset.part) {
-    activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+  } else if (source.dataset.part || Object.hasOwn(source.dataset, 'roomLabel')) {
+    if (source.dataset.part) activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+    else activeRoomLabel = source.dataset.roomLabel;
     draftPart = null;
     scheduleDraw();
     renderContext();
@@ -1471,6 +1497,7 @@ function modifyObject(id, key, value) {
     if (key === 'room') Object.assign(target, { room: value, fill: roomColors[value].color ?? target.fill });
     else if (key === 'fill') Object.assign(target, { room: 'custom', fill: value });
     else if (key === 'tatami') target.tatami = Number(value);
+    else if (key === 'roomArea') target.value = roomLabelText(target.value.split('\n')[0], Number(value.toFixed(2)));
     else if (key === 'variant' && target.layer === 'fixture') {
       const [previousWidth, previousHeight] = partSize(target.kind, target.variant);
       const [newWidth, newHeight] = partSize(target.kind, value);
@@ -1550,12 +1577,14 @@ document.addEventListener('change', event => {
 const partMime = 'application/x-madorikun-part';
 let draggedKind = '';
 context.addEventListener('dragstart', event => {
-  const button = event.target.closest('[data-part]');
-  if (!button || fileBusy || !editable(parts[button?.dataset.part]?.layer)) {
+  const button = event.target.closest('[data-part], [data-room-label][draggable="true"]');
+  const kind = button?.dataset.part ?? button?.dataset.roomLabel;
+  const layer = Object.hasOwn(ROOM_LABELS, kind) ? 'text' : parts[kind]?.layer;
+  if (!layer || fileBusy || !editable(layer)) {
     event.preventDefault();
     return;
   }
-  draggedKind = button.dataset.part;
+  draggedKind = kind;
   event.dataTransfer.setData(partMime, draggedKind);
   event.dataTransfer.effectAllowed = 'copy';
 });
@@ -1573,7 +1602,7 @@ area.addEventListener('dragover', event => {
   if (types.includes('Files')) $('#drag-note').hidden = false;
   else if (draggedKind) {
     const point = toWorld(screenPoint(event));
-    draftPart = partAt(draggedKind, point);
+    draftPart = paletteItemAt(draggedKind, point);
     scheduleDraw();
   }
 });
@@ -1591,7 +1620,7 @@ area.addEventListener('drop', event => {
   const kind = event.dataTransfer.getData(partMime);
   if (kind && !fileBusy && !drag) {
     stage.focus({ preventScroll: true });
-    placePart(kind, toWorld(screenPoint(event)));
+    placePaletteItem(kind, toWorld(screenPoint(event)));
   } else if (event.dataTransfer.files.length) loadFile(event.dataTransfer.files[0]);
 });
 window.addEventListener('dragover', event => {
