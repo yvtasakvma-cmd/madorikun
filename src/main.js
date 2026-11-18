@@ -5,7 +5,9 @@ import {
   projectOnWall, rotate, sub, syncOpenings, uid,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
-import { download, exportSetup, makeExport, openPdf, PDF_LIMIT, rasterPdfPage, readProject, saveProject } from './files.js';
+import {
+  detectImageFormat, download, exportSetup, makeExport, readProject, renderUnderlay, saveProject, UNDERLAY_LIMIT,
+} from './files.js';
 import {
   colorField, floorChoices, icon, importButton, layout, numberField, partPalette,
   propertyMarkup, removeButton, selectField, tools,
@@ -162,8 +164,8 @@ function renderContext() {
   if (tool === 'opening' || tool === 'fixture') controls = partPalette(tool, activeParts[tool])
     + '<span class="context-hint">パーツをキャンバスへドラッグ</span>';
   if (tool === 'underlay') controls = importButton() + (doc().underlay
-    ? `<span class="context-hint pdf-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
-    : '<span class="context-hint">キャンバスへのドロップでも読み込めます</span>');
+    ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
+    : '<span class="context-hint">PDF・PNG・JPEG・WebPをキャンバスへドロップできます</span>');
   context.innerHTML = `<strong class="context-label">${title}</strong>${controls}${fieldInstructions()}`;
 }
 
@@ -189,7 +191,7 @@ function renderInspector() {
     $('#detail-title').textContent = '下絵の設定';
     inspector.innerHTML = `<span class="inspector-name">${escapeHtml(info.name)}</span>
       <fieldset ${editable('underlay') ? '' : 'disabled'}>
-        ${numberField(`ページ（全${state.asset.count}）`, 'underlay-page', info.page, 1, state.asset.count)}
+        ${info.format === 'pdf' ? numberField(`ページ（全${state.asset.count}）`, 'underlay-page', info.page, 1, state.asset.count) : ''}
         ${numberField('不透明度（%）', 'underlay-opacity', info.opacity * 100, 0, 100)}
         ${numberField('倍率（%）', 'underlay-scale', info.scale * 100, 1, 5000, 0.1)}
         ${numberField('回転（°）', 'underlay-angle', info.angle, -360, 360, 0.1)}
@@ -746,60 +748,69 @@ function confirmUnsaved() {
   return !dirty() || window.confirm('未保存の変更があります。この図面を閉じますか？');
 }
 
-async function loadFile(file, pdfOnly = false) {
+async function loadFile(file, underlayOnly = false) {
   if (!file || fileBusy || drag) return;
-  const isPdf = pdfOnly || /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
-  if (isPdf ? doc().underlay && !window.confirm('現在のPDF下絵を置き換えますか？') : !confirmUnsaved()) return;
+  const project = !underlayOnly && /\.madori$/i.test(file.name);
+  if (project && !confirmUnsaved()) return;
   fileBusy = true;
-  let pdf;
   status('ファイルを読み込み中…');
   try {
-    if (isPdf) {
-      if (file.size > PDF_LIMIT) throw new Error('下絵PDFは50 MBまでです。');
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      pdf = await openPdf(bytes);
-      const raster = await rasterPdfPage(pdf, 1);
-      const d = doc();
-      const previous = d.underlay;
-      const asset = rasterAsset(bytes, pdf.numPages, raster.image);
-      const info = {
-        name: file.name.slice(0, 255), page: 1, opacity: previous?.opacity ?? 0.46,
-        angle: previous?.angle ?? 0, at: previous?.at ?? [d.width / 2, d.height / 2],
-        scale: previous?.scale ?? clamp(Math.min(d.width * 0.86 / raster.width, d.height * 0.86 / raster.height), 0.01, 50),
-        naturalWidth: raster.width, naturalHeight: raster.height,
-      };
-      tool = 'underlay';
-      selection.clear();
-      selection.add('underlay');
-      clearDraft();
-      commit(graph => {
-        graph.underlay = info;
-        Object.assign(graph.layers.find(item => item.id === 'underlay'), { visible: true, locked: false });
-      }, pdf.numPages > 1 ? `PDFを読み込みました。右の設定でページを選べます（全${pdf.numPages}ページ）。` : 'PDFを下絵に読み込みました。', asset);
-      if (!doc().objects.length) fit();
-    } else {
+    if (project) {
       const loaded = await readProject(file);
       let asset = null;
-      if (loaded.pdf) {
-        pdf = await openPdf(loaded.pdf);
+      if (loaded.underlay) {
         const info = loaded.doc.underlay;
-        if (info.page > pdf.numPages) throw new Error('下絵のページ番号がPDFに存在しません。');
-        const raster = await rasterPdfPage(pdf, info.page);
+        const raster = await renderUnderlay(loaded.underlay, info.format, info.page);
         if (Math.abs(raster.width - info.naturalWidth) > 0.01 || Math.abs(raster.height - info.naturalHeight) > 0.01) {
-          throw new Error('下絵PDFのページサイズが制作ファイルの設定と一致しません。');
+          throw new Error('下絵のサイズが制作ファイルの設定と一致しません。');
         }
-        asset = rasterAsset(loaded.pdf, pdf.numPages, raster.image);
+        asset = rasterAsset(loaded.underlay, raster.count, raster.image);
       }
       reset(loaded.doc, asset);
       status('制作ファイルを開きました。');
+      return;
     }
+
+    if (file.size > UNDERLAY_LIMIT) throw new Error('下絵ファイルは50 MBまでです。');
+    const signature = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+    const format = detectImageFormat(signature) ?? (isPdf ? 'pdf' : null);
+    if (!format) throw new Error('PDF、PNG、JPEG、WebP、または .madori ファイルを読み込めます。');
+    const previous = doc().underlay;
+    if (previous && !window.confirm('現在の下絵を置き換えますか？')) {
+      status('下絵の置き換えをキャンセルしました。');
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const raster = await renderUnderlay(bytes, format);
+    const d = doc();
+    const width = previous ? previous.naturalWidth * previous.scale : d.width * 0.86;
+    const height = previous ? previous.naturalHeight * previous.scale : d.height * 0.86;
+    const info = {
+      name: file.name.slice(0, 255), format, page: 1, opacity: previous?.opacity ?? 0.46,
+      angle: previous?.angle ?? 0, at: previous?.at ?? [d.width / 2, d.height / 2],
+      scale: clamp(Math.min(width / raster.width, height / raster.height), 0.01, 50),
+      naturalWidth: raster.width, naturalHeight: raster.height,
+    };
+    const asset = rasterAsset(bytes, raster.count, raster.image);
+    tool = 'underlay';
+    selection.clear();
+    selection.add('underlay');
+    clearDraft();
+    const message = format !== 'pdf' ? '画像を下絵に読み込みました。'
+      : raster.count > 1 ? `PDFを読み込みました。右の設定でページを選べます（全${raster.count}ページ）。`
+        : 'PDFを下絵に読み込みました。';
+    commit(graph => {
+      graph.underlay = info;
+      Object.assign(graph.layers.find(item => item.id === 'underlay'), { visible: true, locked: false });
+    }, message, asset);
+    if (!doc().objects.length) fit();
   } catch (error) {
     status(error.message || 'ファイルを読み込めませんでした。', true);
     renderAll();
   } finally {
     fileBusy = false;
     pruneRasterUrls();
-    if (pdf) await pdf.loadingTask.destroy().catch(() => {});
   }
 }
 
@@ -811,14 +822,13 @@ function rasterAsset(bytes, count, image) {
 
 async function changePage(page) {
   const source = state.asset;
-  if (fileBusy || !source || page === doc().underlay.page) return;
+  const info = doc().underlay;
+  if (fileBusy || !source || info?.format !== 'pdf' || page === info.page) return;
   fileBusy = true;
-  let pdf;
   status('PDFページを読み込み中…');
   try {
-    pdf = await openPdf(source.bytes);
-    const raster = await rasterPdfPage(pdf, page);
-    const asset = rasterAsset(source.bytes, source.count, raster.image);
+    const raster = await renderUnderlay(source.bytes, 'pdf', page);
+    const asset = rasterAsset(source.bytes, raster.count, raster.image);
     commit(graph => {
       Object.assign(graph.underlay, { page, naturalWidth: raster.width, naturalHeight: raster.height });
     }, `下絵を${page}ページ目に変更しました。`, asset);
@@ -827,7 +837,6 @@ async function changePage(page) {
     status(error.message || 'ページを変更できませんでした。', true);
   } finally {
     fileBusy = false;
-    if (pdf) await pdf.loadingTask.destroy().catch(() => {});
   }
 }
 
@@ -918,7 +927,7 @@ function runAction(action, source) {
       status('新規図面を作成しました。');
     }
   } else if (action === 'open') $('#open-input').click();
-  else if (action === 'import') $('#pdf-input').click();
+  else if (action === 'import') $('#underlay-input').click();
   else if (action === 'save') save();
   else if (action === 'export') {
     exportForm.elements.includeUnderlay.checked = false;
@@ -988,10 +997,10 @@ function modifyObject(id, key, value) {
 
 document.addEventListener('change', event => {
   const input = event.target;
-  if (input.id === 'open-input' || input.id === 'pdf-input') {
+  if (input.id === 'open-input' || input.id === 'underlay-input') {
     const file = input.files?.[0];
     input.value = '';
-    loadFile(file, input.id === 'pdf-input');
+    loadFile(file, input.id === 'underlay-input');
     return;
   }
   if (fileBusy || drag) return;

@@ -1,14 +1,20 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, layers, lengthOf, parts, syncOpenings } from './model.js';
+import { floors, layers, lengthOf, parts, PROJECT_VERSION, syncOpenings } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 
 const MB = 1024 * 1024;
-export const PDF_LIMIT = 50 * MB;
+export const UNDERLAY_LIMIT = 50 * MB;
 const JSON_LIMIT = 12 * MB;
 export const PROJECT_LIMIT = 64 * MB;
-const assetLimits = new Map([['project.json', JSON_LIMIT], ['assets/underlay.pdf', PDF_LIMIT]]);
+const imageTypes = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
+const underlayFormats = new Set(['pdf', ...Object.keys(imageTypes)]);
+const underlayPath = format => 'assets/underlay.' + format;
+const assetLimits = new Map([
+  ['project.json', JSON_LIMIT],
+  ...Array.from(underlayFormats, format => [underlayPath(format), UNDERLAY_LIMIT]),
+]);
 const number = (value, min = -1e6, max = 1e6) => Number.isFinite(value) && value >= min && value <= max;
 const integer = (value, min, max) => Number.isInteger(value) && number(value, min, max);
 const point = value => Array.isArray(value) && value.length === 2 && value.every(n => number(n));
@@ -20,9 +26,9 @@ function ensure(condition, message = '制作ファイルの内容に誤りがあ
   if (!condition) throw new Error(message);
 }
 
-export function validateProject(doc, pdf) {
+function validateProject(doc, underlay, assetPath) {
   ensure(doc && typeof doc === 'object');
-  ensure(doc.version === 1, 'この制作ファイルの形式バージョンには対応していません。');
+  ensure([1, PROJECT_VERSION].includes(doc.version), 'この制作ファイルの形式バージョンには対応していません。');
   ensure(string(doc.name, 120) && number(doc.width, 100, 100000) && number(doc.height, 100, 100000));
   ensure(Array.isArray(doc.layers) && doc.layers.length === layers.length);
   const layerIds = new Set(layers.map(layer => layer.id));
@@ -56,15 +62,17 @@ export function validateProject(doc, pdf) {
   }
   if (doc.underlay !== null) {
     const info = doc.underlay;
-    ensure(pdf?.length, '下絵のPDFが制作ファイルに入っていません。');
-    ensure(info && string(info.name, 255) && integer(info.page, 1, 100000) && point(info.at)
+    const format = doc.version === 1 ? 'pdf' : info?.format;
+    ensure(underlayFormats.has(format), '制作ファイルの下絵の形式に対応していません。');
+    ensure(underlay?.length && assetPath === underlayPath(format), '下絵ファイルが制作ファイルに入っていません。');
+    ensure(underlay.length <= UNDERLAY_LIMIT, '下絵ファイルは50 MBまでです。');
+    ensure(info && string(info.name, 255) && integer(info.page, 1, format === 'pdf' ? 100000 : 1) && point(info.at)
       && number(info.angle) && number(info.scale, 0.01, 50) && number(info.opacity, 0, 1)
       && number(info.naturalWidth, 1, 100000) && number(info.naturalHeight, 1, 100000));
-  } else ensure(!pdf, '下絵の参照情報がありません。');
-  return doc;
+  } else ensure(!underlay, '下絵の参照情報がありません。');
 }
 
-// Read the central directory before inflating. Only v1 filenames and bounded
+// Read the central directory before inflating. Only known filenames and bounded
 // decoded sizes are accepted, and the inflated contents must match their CRCs.
 function directoryEntries(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -111,19 +119,24 @@ export async function readProject(file) {
   } catch {
     throw new Error('図面データのJSONを読み込めません。');
   }
-  const pdf = decoded['assets/underlay.pdf'] ?? null;
-  validateProject(doc, pdf);
+  const assetPath = [...entries.keys()].find(name => name !== 'project.json');
+  const underlay = assetPath ? decoded[assetPath] : null;
+  validateProject(doc, underlay, assetPath);
+  if (doc.version === 1) {
+    if (doc.underlay) doc.underlay.format = 'pdf';
+    doc.version = PROJECT_VERSION;
+  }
   for (const wall of doc.objects.filter(object => object.layer === 'wall')) syncOpenings(doc, wall.id);
-  return { doc, pdf };
+  return { doc, underlay };
 }
 
-export function saveProject(doc, pdf) {
-  validateProject(doc, pdf);
+export function saveProject(doc, underlay) {
+  const assetPath = doc.underlay ? underlayPath(doc.underlay.format) : null;
+  validateProject(doc, underlay, assetPath);
   const json = strToU8(JSON.stringify(doc));
   ensure(json.length <= JSON_LIMIT, '図面データが大きすぎます。');
-  if (pdf) ensure(pdf.length <= PDF_LIMIT, '下絵PDFは50 MBまでです。');
   const files = { 'project.json': json };
-  if (pdf) files['assets/underlay.pdf'] = [pdf, { level: 0 }];
+  if (underlay) files[assetPath] = [underlay, { level: 0 }];
   return new Blob([zipSync(files)], { type: 'application/zip' });
 }
 
@@ -139,8 +152,8 @@ async function loadPdfEngine() {
   return pdfEngine;
 }
 
-export async function openPdf(bytes) {
-  ensure(bytes?.length > 0 && bytes.length <= PDF_LIMIT, '下絵PDFは50 MBまでです。');
+async function openPdf(bytes) {
+  ensure(bytes?.length > 0 && bytes.length <= UNDERLAY_LIMIT, '下絵PDFは50 MBまでです。');
   const engine = await loadPdfEngine();
   const base = new URL('pdfjs/', document.baseURI).href;
   const task = engine.getDocument({
@@ -157,7 +170,7 @@ export async function openPdf(bytes) {
   }
 }
 
-export async function rasterPdfPage(pdf, pageNumber) {
+async function rasterPdfPage(pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
   const { width, height } = page.getViewport({ scale: 1 });
   ensure(number(width, 1, 100000) && number(height, 1, 100000), 'PDFページのサイズに対応していません。');
@@ -169,6 +182,46 @@ export async function rasterPdfPage(pdf, pageNumber) {
   const image = await canvasBlob(canvas, 'image/png');
   page.cleanup();
   return { width, height, image };
+}
+
+export function detectImageFormat(bytes) {
+  const startsWith = (signature, offset = 0) => signature.every((byte, i) => bytes[i + offset] === byte);
+  if (startsWith([137, 80, 78, 71, 13, 10, 26, 10])) return 'png';
+  if (startsWith([255, 216, 255])) return 'jpg';
+  if (startsWith([82, 73, 70, 70]) && startsWith([87, 69, 66, 80], 8)) return 'webp';
+  return null;
+}
+
+export async function renderUnderlay(bytes, format, page = 1) {
+  if (format === 'pdf') {
+    const pdf = await openPdf(bytes);
+    try {
+      ensure(page <= pdf.numPages, '下絵のページ番号がPDFに存在しません。');
+      return { ...await rasterPdfPage(pdf, page), count: pdf.numPages };
+    } finally {
+      await pdf.loadingTask.destroy().catch(() => {});
+    }
+  }
+
+  ensure(detectImageFormat(bytes) === format, '下絵の画像形式が一致しません。');
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([bytes], { type: imageTypes[format] }));
+  } catch {
+    throw new Error('画像を読み込めませんでした。ファイルを確認してください。');
+  }
+  try {
+    const { width, height } = bitmap;
+    ensure(number(width, 1, 100000) && number(height, 1, 100000), '下絵画像のサイズに対応していません。');
+    const scale = Math.min(1, 2400 / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return { width, height, image: await canvasBlob(canvas, 'image/png'), count: 1 };
+  } finally {
+    bitmap.close();
+  }
 }
 
 export function canvasBlob(canvas, mime, quality) {

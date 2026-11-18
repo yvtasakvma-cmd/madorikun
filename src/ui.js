@@ -79,9 +79,9 @@ export function layout() {
         </svg>
         <div id="empty-note" class="empty-note" hidden>
           <span class="empty-icon">${icon('file', 28)}</span>
-          <strong>下絵のPDFをドロップ</strong>
+          <strong>PDFや画像をドロップ</strong>
           <span>壁や床ツールで直接描き始めることもできます</span>
-          ${button('import', 'upload', 'PDFを選ぶ', 'button bordered')}
+          ${button('import', 'upload', '下絵を選ぶ', 'button bordered')}
         </div>
         <div class="drag-note" id="drag-note" hidden>${icon('upload', 30)}<strong>ファイルをドロップして読み込む</strong></div>
         <div class="zoom-controls" aria-label="表示倍率">
@@ -106,8 +106,8 @@ export function layout() {
       <span id="status" role="status"><i></i>準備完了</span>
       <span class="footer-meta"><span id="object-count"></span>${iconButton('help', 'help', 'キーボード操作')}</span>
     </footer>
-    <input id="open-input" type="file" accept=".madori,.pdf,application/pdf" hidden>
-    <input id="pdf-input" type="file" accept=".pdf,application/pdf" hidden>
+    <input id="open-input" type="file" accept=".madori,.pdf,.png,.jpg,.jpeg,.webp" hidden>
+    <input id="underlay-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden>
     <dialog id="export-dialog">
       <form id="export-form">
         <div class="dialog-heading"><h2>図面を書き出す</h2>${iconButton('close-dialog', 'close', '閉じる')}</div>
@@ -119,7 +119,7 @@ export function layout() {
             <label class="stack-field" data-raster>長辺（px）<input name="pixels" type="number" min="240" max="6000" value="2000" required></label>
             <label class="stack-field" data-jpeg>JPEG画質（%）<input name="quality" type="number" min="10" max="100" value="92" required></label>
             <label class="stack-field">図面の余白<input name="margin" type="number" min="0" max="100" value="16" required></label>
-            <label class="check-field"><input name="includeUnderlay" type="checkbox">PDF下絵を含める</label>
+            <label class="check-field"><input name="includeUnderlay" type="checkbox">下絵を含める</label>
           </div>
         </div>
         <div class="dialog-footer"><span id="export-status" role="status"></span><button type="submit" class="button primary">${icon('export')}書き出す</button></div>
@@ -185,4 +185,4 @@ export function propertyMarkup(item) {
 }
 
 export const removeButton = () => button('delete', 'trash', '削除', 'button danger quiet');
-export const importButton = () => button('import', 'upload', 'PDFを選ぶ', 'button bordered compact');
+export const importButton = () => button('import', 'upload', '下絵を選ぶ', 'button bordered compact');

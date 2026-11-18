@@ -43,9 +43,11 @@ export const rotate = ([x, y], angle) => {
 export const add = (a, b) => a.map((x, i) => x + b[i]);
 export const sub = (a, b) => a.map((x, i) => x - b[i]);
 
+export const PROJECT_VERSION = 2;
+
 export function blank() {
   return {
-    version: 1, name: '無題の間取り', width: 720, height: 900,
+    version: PROJECT_VERSION, name: '無題の間取り', width: 720, height: 900,
     layers: layers.map(({ id }) => ({ id, visible: true, locked: false })),
     objects: [], underlay: null,
   };
