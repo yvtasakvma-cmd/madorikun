@@ -47,8 +47,8 @@ let view = { x: 0, y: 0, scale: 1 };
 let previewSerial = 0;
 let previewSetup = null;
 const rasterUrls = new Set();
-const CLOSE_SNAP_RADIUS = 16;
-const CLOSE_RELEASE_RADIUS = 22;
+const SNAP_RADIUS = 16;
+const SNAP_RELEASE_RADIUS = 22;
 const HANDLES = ['nw', 'ne', 'se', 'sw'];
 const DIRECTIONS = { nw: [-1, -1], ne: [1, -1], se: [1, 1], sw: [-1, 1] };
 const HISTORY_LIMIT = 60;
@@ -317,22 +317,25 @@ function handlesMarkup(items) {
   return `<g stroke="#157f69" stroke-width="${stroke}" fill="none">${draw}</g>`;
 }
 
+function snapMarker([x, y], className) {
+  return `<circle cx="${x}" cy="${y}" r="${10 / view.scale}" fill="#ffdea0" opacity=".84"/>
+    <circle class="${className}" cx="${x}" cy="${y}" r="${5.5 / view.scale}" fill="#b65200"
+      stroke="#ffffff" stroke-width="${1.5 / view.scale}"/>`;
+}
+
 function draftMarkup() {
   let markup = '';
   if (pending.length) {
     const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
-    const vertices = closing ?? pending;
-    const points = hover ? [...vertices, closing ? vertices[0] : drawingPoint(hover.point, hover.free)] : vertices;
+    const wall = hover && tool === 'wall' ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
+    const vertices = closing ?? (wall ? [wall.start] : pending);
+    const points = hover ? [...vertices, wall?.end ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
     for (const [x, y] of vertices) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
-    if (closing) {
-      const [x, y] = vertices[0];
-      markup += `<circle cx="${x}" cy="${y}" r="${10 / view.scale}" fill="#ffdea0" opacity=".84"/>
-        <circle class="closing-target" cx="${x}" cy="${y}" r="${5.5 / view.scale}" fill="#b65200"
-          stroke="#ffffff" stroke-width="${1.5 / view.scale}"/>`;
-    }
+    if (closing) markup += snapMarker(vertices[0], 'closing-target');
+    if (wall?.target) markup += snapMarker(wall.target, 'wall-snap-target');
   }
   if (draftPart) {
     const draftDoc = { ...doc(), objects: [draftPart] };
@@ -396,34 +399,54 @@ function canEditItem(item) {
   return item.layer !== 'wall' || !layer('opening').locked || !doc().objects.some(part => part.wallId === item.id);
 }
 
-function snapWallPoint(point, { excluded = new Set(), origin, free = false } = {}) {
-  const tolerance = 9 / view.scale;
+function nearestWallEndpoint(point, { radius, excluded, accepts }) {
+  if (!layer('wall').visible) return null;
   let nearest = null;
-  let best = tolerance;
+  let best = radius / view.scale;
   for (const item of doc().objects) {
-    if (item.layer !== 'wall' || !layer('wall').visible || excluded.has(item.id)) continue;
+    if (item.layer !== 'wall' || excluded?.has(item.id)) continue;
     for (const endpoint of [item.a, item.b]) {
-      if (origin && !free && !isDrawingAngle(origin, endpoint)) continue;
       const distance = lengthOf(endpoint, point);
-      if (distance < best) {
+      if (distance <= best && (!accepts || accepts(endpoint))) {
         nearest = endpoint;
         best = distance;
       }
     }
   }
-  if (nearest) return [...nearest];
-  return origin && !free ? snapDrawingAngle(point, origin) : point;
+  return nearest;
+}
+
+function snapWallPoint(point, { excluded, origin, free = false }) {
+  const endpoint = nearestWallEndpoint(point, {
+    radius: 9, excluded, accepts: target => free || isDrawingAngle(origin, target),
+  });
+  return endpoint ? [...endpoint] : free ? point : snapDrawingAngle(point, origin);
+}
+
+function wallDraft(point, free, stickyTarget) {
+  const start = pending[0];
+  const anchored = !free && nearestWallEndpoint(start, { radius: 0.01 });
+  function startFor(target) {
+    if (lengthOf(start, target) < 1) return null;
+    if (free || isDrawingAngle(start, target)) return start;
+    if (anchored) return null;
+    const aligned = snapDrawingAngle(start, target);
+    return lengthOf(aligned, start) * view.scale <= SNAP_RADIUS ? aligned : null;
+  }
+  const target = stickyTarget && lengthOf(stickyTarget, point) * view.scale <= SNAP_RELEASE_RADIUS && startFor(stickyTarget)
+    ? stickyTarget : nearestWallEndpoint(point, { radius: SNAP_RADIUS, accepts: startFor });
+  return target ? { start: startFor(target), end: [...target], target }
+    : { start, end: free ? point : snapDrawingAngle(point, start), target: null };
 }
 
 function isClosingPoint(point) {
   if (pending.length < 3 || (tool !== 'floor' && tool !== 'color')) return false;
-  const radius = hover?.atStart ? CLOSE_RELEASE_RADIUS : CLOSE_SNAP_RADIUS;
+  const radius = hover?.atStart ? SNAP_RELEASE_RADIUS : SNAP_RADIUS;
   return lengthOf(point, pending[0]) * view.scale <= radius;
 }
 
 function drawingPoint(point, free) {
   const origin = pending.at(-1);
-  if (tool === 'wall') return snapWallPoint(point, { origin, free });
   if (!origin) return point;
   if (free) return point;
   const corner = pending.length >= 2 && snapClosingCorner(point, origin, pending[0], 9 / view.scale);
@@ -506,12 +529,15 @@ function drawingClick(event, point) {
     return;
   }
   if (tool === 'wall') {
-    const next = drawingPoint(point, event.shiftKey);
-    if (!pending.length) pending = [next];
-    else if (lengthOf(pending[0], next) >= 1) {
-      const a = pending[0];
-      clearDraft();
-      addItem({ id: uid(), layer: 'wall', a, b: next, width: defaults.width }, '壁を追加しました。');
+    if (!pending.length) {
+      const target = nearestWallEndpoint(point, { radius: SNAP_RADIUS });
+      pending = [target ? [...target] : point];
+    } else {
+      const { start, end } = wallDraft(point, event.shiftKey, hover?.wallTarget);
+      if (lengthOf(start, end) >= 1) {
+        clearDraft();
+        addItem({ id: uid(), layer: 'wall', a: start, b: end, width: defaults.width }, '壁を追加しました。');
+      }
     }
   } else if (tool === 'floor' || tool === 'color') {
     if (isClosingPoint(point) || (pending.length >= 3 && event.detail === 2)) finishPolygon(event.shiftKey);
@@ -742,7 +768,8 @@ stage.addEventListener('pointermove', event => {
     });
   } else if (pending.length) {
     const point = toWorld(screenPoint(event));
-    hover = { point, free: event.shiftKey, atStart: isClosingPoint(point) };
+    const wallTarget = tool === 'wall' ? wallDraft(point, event.shiftKey, hover?.wallTarget).target : null;
+    hover = { point, free: event.shiftKey, atStart: isClosingPoint(point), wallTarget };
     scheduleDraw();
   }
 });
