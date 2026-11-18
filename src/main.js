@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -676,8 +676,7 @@ function addItem(item, message, adjustment) {
 }
 
 function partAt(kind, point) {
-  const part = makePart(kind, point);
-  if (Object.hasOwn(partDesigns, kind)) part.variant = partDesigns[kind];
+  const part = makePart(kind, point, undefined, partDesigns[kind]);
   snapPart(part, point, doc());
   return part;
 }
@@ -1427,7 +1426,12 @@ function modifyObject(id, key, value) {
     if (key === 'room') Object.assign(target, { room: value, fill: roomColors[value].color ?? target.fill });
     else if (key === 'fill') Object.assign(target, { room: 'custom', fill: value });
     else if (key === 'tatami') target.tatami = Number(value);
-    else if (key === 'w' && target.layer === 'opening') {
+    else if (key === 'variant' && target.kind === 'toilet') {
+      const [previousWidth] = partSize(target.kind, target.variant);
+      const [newWidth] = partSize(target.kind, value);
+      target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
+      target.variant = value;
+    } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);
       if (wall) value = Math.min(value, lengthOf(wall.a, wall.b));
       target.h = clamp(target.h * value / target.w, 1, 50000);

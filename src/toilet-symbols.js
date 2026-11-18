@@ -1,0 +1,63 @@
+// Coordinates traced from the four reference drawings, in their original order.
+export const toiletSymbols = {
+  tank: {
+    name: '側面付きタンク',
+    bounds: [25, 16, 83, 94],
+    lineWidth: 2.3,
+    paths: [
+      [['M', 30.5, 16], ['H', 83], ['V', 30.5], ['H', 30.5], ['Z']],
+      [['M', 33.5, 30.5], ['V', 34.5], ['M', 81, 30.5], ['V', 34.5]],
+      [['M', 31.5, 35], ['H', 82.5], ['V', 54],
+        ['C', 82.5, 73, 74, 94, 57.4, 94], ['C', 40.8, 94, 31.5, 74, 31.5, 54], ['Z']],
+      [['M', 31.5, 35], ['L', 25, 36], ['V', 56], ['H', 31.5]],
+    ],
+  },
+  tankless: {
+    name: '幅広タンク',
+    bounds: [27, 23.5, 91, 128.5],
+    lineWidth: 3.4,
+    paths: [
+      [['M', 27, 23.5], ['H', 91], ['V', 55.5], ['H', 73],
+        ['C', 83, 63.5, 89.5, 77, 88.5, 92], ['C', 87.5, 112.5, 75, 128.5, 58.5, 128.5],
+        ['C', 41.5, 128.5, 28, 112, 28, 92], ['C', 28, 77, 33.5, 64, 43.5, 55.5],
+        ['H', 27], ['Z']],
+    ],
+  },
+  square: {
+    name: 'コンパクト',
+    bounds: [16, 16.5, 56, 94],
+    lineWidth: 2.3,
+    paths: [
+      [['M', 16, 20.5], ['Q', 16, 16.5, 20, 16.5], ['H', 52],
+        ['Q', 56, 16.5, 56, 20.5], ['V', 55], ['C', 56, 78, 49, 94, 36, 94],
+        ['C', 23, 94, 16, 78, 16, 55], ['Z']],
+      [['M', 16, 45], ['H', 56], ['M', 22, 45], ['V', 50], ['H', 50], ['V', 45]],
+    ],
+  },
+  elongated: {
+    name: '縦長',
+    bounds: [26.5, 22, 91.5, 160],
+    lineWidth: 4.7,
+    paths: [
+      [['M', 28.5, 122], ['V', 51], ['C', 28.5, 34.5, 41.5, 22, 58.5, 22],
+        ['C', 76.5, 22, 90, 35.3, 90, 51], ['V', 122]],
+      [['M', 37.5, 121], ['V', 52], ['C', 37.5, 40.5, 46.5, 32, 58.5, 32],
+        ['C', 71, 32, 81.5, 40.5, 81.5, 52], ['V', 121]],
+      [['M', 28.5, 129], ['C', 28.5, 146, 41.8, 160, 59, 160],
+        ['C', 76.5, 160, 90, 146.5, 90, 129]],
+      [['M', 30, 121.5], ['H', 87.5], ['Q', 91.5, 121.5, 91.5, 126],
+        ['Q', 91.5, 130, 87.5, 130], ['H', 30], ['Q', 26.5, 130, 26.5, 126],
+        ['Q', 26.5, 121.5, 30, 121.5], ['Z']],
+    ],
+  },
+};
+
+export function toiletPaths(symbol, width, height) {
+  const [left, top, right, bottom] = symbol.bounds;
+  const x = value => (value - left) * width / (right - left) - width / 2;
+  const y = value => (value - top) * height / (bottom - top) - height / 2;
+  const coordinates = (command, values) => values.map((value, i) =>
+    Number((command === 'V' || (command !== 'H' && i % 2) ? y(value) : x(value)).toFixed(4)));
+  return symbol.paths.map(path => path.map(([command, ...values]) =>
+    command + coordinates(command, values).join(' ')).join(''));
+}

@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partStrokeDefault, roomColors, TEXT_FONTS } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, roomColors, TEXT_FONTS } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -165,7 +165,8 @@ export const checkField = (label, key, checked, mixed = false) =>
 export const colorField = (key, fill) => `<label class="field color-field">塗り色<input type="color" value="${fill}" data-field="${key}"></label>`;
 
 function partIcon(id, variant) {
-  const { size: [width, height], layer } = parts[id];
+  const { layer } = parts[id];
+  const [width, height] = partSize(id, variant);
   const arc = ['swing', 'double', 'folding'].includes(id);
   const viewTop = arc ? -Math.max(id === 'swing' ? width : height, 12) - 5 : -height / 2 - 6;
   const viewBottom = arc ? 8 : height / 2 + 6;
@@ -216,7 +217,7 @@ export function propertyMarkup(item) {
   return (design ? selectField('デザイン', 'object-variant', item.variant ?? design.default, Object.entries(design.choices)) : '')
     + numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
-    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind), stroke.min, stroke.max, 0.01)
+    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind, item.variant), stroke.min, stroke.max, 0.01)
     + `<div class="field">回転角度 <output>${Number(item.angle.toFixed(1))}°</output></div>
       <div class="property-actions part-actions">
         ${button('flip-x', 'flip', '左右反転', 'button bordered compact')}

@@ -1,3 +1,5 @@
+import { toiletSymbols } from './toilet-symbols.js';
+
 export const layers = [
   { id: 'underlay', name: '下絵', icon: 'file', swatch: '#a0a9b6' },
   { id: 'color', name: '色', icon: 'palette', swatch: '#daa499' },
@@ -33,12 +35,20 @@ export const DEFAULT_TEXT_FONT = 'gothic';
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 
 export const PART_DESIGNS = {
-  toilet: { default: 'tank', choices: { tank: 'タンク付き', tankless: 'タンクレス', square: '角型' } },
+  toilet: {
+    default: 'tank',
+    choices: Object.fromEntries(Object.entries(toiletSymbols).map(([id, symbol]) => [id, symbol.name])),
+  },
   sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
 };
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
-export const partStrokeDefault = kind => isSlidingSymbol(kind) ? 0.8 : PART_STROKE.defaultWidth;
+export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
+  if (isSlidingSymbol(kind)) return 0.8;
+  if (kind !== 'toilet') return PART_STROKE.defaultWidth;
+  const { bounds: [, top, , bottom], lineWidth } = toiletSymbols[variant];
+  return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
+}
 
 export function openingFrameDepth(kind, width, depth) {
   return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;
@@ -137,10 +147,20 @@ export function blank() {
   };
 }
 
-export function makePart(kind, at, width) {
-  const { layer, size } = parts[kind];
-  const w = width ?? size[0];
-  return { id: uid(), layer, kind, at, w, h: w * size[1] / size[0], angle: 0, flipX: false, flipY: false };
+export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
+  const size = parts[kind].size;
+  if (kind !== 'toilet') return size;
+  const [left, top, right, bottom] = toiletSymbols[variant].bounds;
+  return [(right - left) * size[1] / (bottom - top), size[1]];
+}
+
+export function makePart(kind, at, width, variant = PART_DESIGNS[kind]?.default) {
+  const [defaultWidth, defaultHeight] = partSize(kind, variant);
+  const w = width ?? defaultWidth;
+  return {
+    id: uid(), layer: parts[kind].layer, kind, at, w, h: w * defaultHeight / defaultWidth, angle: 0,
+    flipX: false, flipY: false, ...(variant ? { variant } : {}),
+  };
 }
 
 export function projectOnWall(point, wall) {
