@@ -465,6 +465,26 @@ function marqueeMarkup({ bounds }) {
     stroke-dasharray="${4 / view.scale} ${3 / view.scale}" pointer-events="none"/>`;
 }
 
+function textCaretMarkup(item, editor) {
+  const position = editor.selectionDirection === 'backward' ? editor.selectionStart : editor.selectionEnd;
+  const preceding = editor.value.slice(0, position).split('\n');
+  const column = preceding.at(-1).length;
+  const lines = sceneNodes.get(item.id)?.node.querySelector('.text-glyphs')?.children;
+  const line = lines?.[preceding.length - 1];
+  if (!line) return '';
+  const count = line.getNumberOfChars();
+  const x = column < count ? line.getStartPositionOfChar(column).x
+    : count ? line.getEndPositionOfChar(count - 1).x : 0;
+  const baseline = line.y.baseVal.getItem(0).value;
+  const height = Math.max(item.size, 11 / view.scale);
+  const bar = `M${x} ${baseline - item.size * 0.28 - height / 2}v${height}`;
+  return `<g class="text-edit-caret" transform="translate(${item.at.join(' ')}) rotate(${item.angle})"
+    aria-hidden="true" pointer-events="none" fill="none">
+    <path d="${bar}" stroke="#ffffff" stroke-width="4" vector-effect="non-scaling-stroke"/>
+    <path d="${bar}" stroke="#08786a" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </g>`;
+}
+
 function draw() {
   drawFrame = 0;
   stage.classList.toggle('part-placement-cursor',
@@ -473,11 +493,9 @@ function draw() {
     ? wallDraft(hover.point, hover.free, hover.wallTarget) : null;
   let graph = doc();
   const editor = document.activeElement;
-  if (editor?.matches(TEXT_INPUT)) {
-    const item = itemBy(editor.dataset.objectId);
-    if (item && item.value !== editor.value) {
-      graph = { ...graph, objects: graph.objects.map(object => object === item ? { ...object, value: editor.value } : object) };
-    }
+  const editing = editor?.matches(TEXT_INPUT) ? itemBy(editor.dataset.objectId) : null;
+  if (editing && editing.value !== editor.value) {
+    graph = { ...graph, objects: graph.objects.map(item => item === editing ? { ...item, value: editor.value } : item) };
   }
   if (wall?.adjustment) {
     const { id } = wall.adjustment;
@@ -488,7 +506,8 @@ function draw() {
   $('#paper').setAttribute('height', graph.height);
   updateScene(graph);
   overlay.innerHTML = draftMarkup(wall) + (drag?.type === 'marquee' && drag.bounds
-    ? marqueeMarkup(drag) : handlesMarkup(graph.objects.filter(item => selection.has(item.id))));
+    ? marqueeMarkup(drag)
+    : editing ? textCaretMarkup(editing, editor) : handlesMarkup(graph.objects.filter(item => selection.has(item.id))));
 }
 
 function scheduleDraw() {
@@ -1468,9 +1487,16 @@ function modifyObject(id, key, value) {
   }, undefined, state.asset, key === 'value' ? renderTextEdit : renderAll);
 }
 
-inspector.addEventListener('input', event => {
-  if (event.target.matches(TEXT_INPUT)) scheduleDraw();
-});
+for (const eventName of ['input', 'focusin', 'focusout', 'select']) {
+  inspector.addEventListener(eventName, event => {
+    if (event.target.matches(TEXT_INPUT)) scheduleDraw();
+  });
+}
+function redrawTextCaret() {
+  if (document.activeElement?.matches(TEXT_INPUT)) scheduleDraw();
+}
+document.addEventListener('selectionchange', redrawTextCaret);
+document.fonts.addEventListener('loadingdone', redrawTextCaret);
 
 document.addEventListener('change', event => {
   const input = event.target;

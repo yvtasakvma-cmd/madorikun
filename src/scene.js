@@ -236,7 +236,7 @@ function textDrawing(item, color, halo, fonts) {
   }).join('');
   return `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle})">
     <g fill="${halo}" stroke="${halo}" stroke-linejoin="round" stroke-width="4">${glyphs}</g>
-    <g fill="${color}">${glyphs}</g>
+    <g class="text-glyphs" fill="${color}">${glyphs}</g>
   </g>`;
 }
 
