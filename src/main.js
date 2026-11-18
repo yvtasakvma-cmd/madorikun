@@ -1,8 +1,8 @@
 import './style.css';
 import fontUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import {
-  add, blank, clamp, detach, floors, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
-  projectOnWall, rotate, sub, syncOpenings, uid,
+  add, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
+  projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid,
 } from './model.js';
 import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
 import {
@@ -139,9 +139,9 @@ function selectTool(next) {
 function fieldInstructions() {
   const label = {
     select: 'ドラッグで移動 · Alt＋ドラッグで複製',
-    wall: '始点と終点をクリック',
-    floor: '床の角をクリックし、最初の点に戻って閉じる',
-    color: '角をクリックし、最初の点に戻って閉じる',
+    wall: '始点と終点をクリック · Shiftで角度を自由に',
+    floor: '角をクリックして囲む · Shiftで角度を自由に',
+    color: '角をクリックして囲む · Shiftで角度を自由に',
     text: '配置する場所をクリック',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
@@ -318,7 +318,7 @@ function handlesMarkup(items) {
 function draftMarkup() {
   let markup = '';
   if (pending.length) {
-    const points = [...pending, ...(hover ? [hover] : [])];
+    const points = [...pending, ...(hover ? [drawingPoint(hover.point, hover.free)] : [])];
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
@@ -386,13 +386,14 @@ function canEditItem(item) {
   return item.layer !== 'wall' || !layer('opening').locked || !doc().objects.some(part => part.wallId === item.id);
 }
 
-function getSnap(point, excluded = new Set(), origin = null) {
+function snapWallPoint(point, { excluded = new Set(), origin, free = false } = {}) {
   const tolerance = 9 / view.scale;
   let nearest = null;
   let best = tolerance;
   for (const item of doc().objects) {
     if (item.layer !== 'wall' || !layer('wall').visible || excluded.has(item.id)) continue;
     for (const endpoint of [item.a, item.b]) {
+      if (origin && !free && !isDrawingAngle(origin, endpoint)) continue;
       const distance = lengthOf(endpoint, point);
       if (distance < best) {
         nearest = endpoint;
@@ -401,12 +402,21 @@ function getSnap(point, excluded = new Set(), origin = null) {
     }
   }
   if (nearest) return [...nearest];
-  if (origin) {
-    const [dx, dy] = sub(point, origin);
-    if (Math.abs(dx) < tolerance && Math.abs(dy) > tolerance) return [origin[0], point[1]];
-    if (Math.abs(dy) < tolerance && Math.abs(dx) > tolerance) return [point[0], origin[1]];
-  }
-  return point;
+  return origin && !free ? snapDrawingAngle(point, origin) : point;
+}
+
+function isClosingPoint(point) {
+  return pending.length >= 3 && lengthOf(point, pending[0]) < 10 / view.scale;
+}
+
+function drawingPoint(point, free) {
+  const origin = pending.at(-1);
+  if (tool === 'wall') return snapWallPoint(point, { origin, free });
+  if (!origin) return point;
+  if (isClosingPoint(point) && (free || isDrawingAngle(origin, pending[0]))) return pending[0];
+  if (free) return point;
+  const corner = pending.length >= 2 && snapClosingCorner(point, origin, pending[0], 9 / view.scale);
+  return corner || snapDrawingAngle(point, origin);
 }
 
 function snapPart(part, point, graph, excluded = new Set()) {
@@ -449,9 +459,13 @@ function placePart(kind, point) {
   addItem(part, parts[kind].name + 'を配置しました。');
 }
 
-function finishPolygon() {
+function finishPolygon(free = false) {
   if (pending.length < 3 || !editable(tool)) return;
   const points = pending;
+  if (!free && !isDrawingAngle(points.at(-1), points[0])) {
+    status('角を追加するか、Shiftを押しながら閉じてください。', true);
+    return;
+  }
   clearDraft();
   if (Math.abs(points.reduce((area, p, i) => {
     const q = points[(i + 1) % points.length];
@@ -475,7 +489,7 @@ function drawingClick(event, point) {
     return;
   }
   if (tool === 'wall') {
-    const next = getSnap(point, new Set(), pending[0]);
+    const next = drawingPoint(point, event.shiftKey);
     if (!pending.length) pending = [next];
     else if (lengthOf(pending[0], next) >= 1) {
       const a = pending[0];
@@ -483,8 +497,14 @@ function drawingClick(event, point) {
       addItem({ id: uid(), layer: 'wall', a, b: next, width: defaults.width }, '壁を追加しました。');
     }
   } else if (tool === 'floor' || tool === 'color') {
-    if (pending.length >= 3 && (event.detail === 2 || lengthOf(point, pending[0]) < 10 / view.scale)) finishPolygon();
-    else if (pending.length < 1000 && (!pending.length || lengthOf(point, pending.at(-1)) > 0.5)) pending.push(point);
+    if (isClosingPoint(point) || (pending.length >= 3 && event.detail === 2)) finishPolygon(event.shiftKey);
+    else {
+      const next = drawingPoint(point, event.shiftKey);
+      if (pending.length < 1000 && (!pending.length || lengthOf(next, pending.at(-1)) > 0.5)) {
+        pending.push(next);
+        hover = null;
+      }
+    }
   } else if (tool === 'text') {
     addItem({ id: uid(), layer: 'text', at: point, value: '部屋名', size: defaults.size, angle: 0 }, '文字を追加しました。');
     inspector.querySelector('textarea')?.select();
@@ -660,7 +680,7 @@ function handleDrag(graph, current, point, proportional) {
   if (handle.startsWith('wall-')) {
     const endpoint = handle.at(-1);
     const other = endpoint === 'a' ? item.b : item.a;
-    const snapped = getSnap(point, chosen, other);
+    const snapped = snapWallPoint(point, { excluded: chosen, origin: other, free: proportional });
     if (lengthOf(snapped, other) >= 1) item[endpoint] = snapped;
     syncOpenings(graph, item.id);
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
@@ -704,8 +724,7 @@ stage.addEventListener('pointermove', event => {
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
   } else if (pending.length) {
-    const point = toWorld(screenPoint(event));
-    hover = tool === 'wall' ? getSnap(point, new Set(), pending[0]) : point;
+    hover = { point: toWorld(screenPoint(event)), free: event.shiftKey };
     scheduleDraw();
   }
 });
@@ -1121,7 +1140,10 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.altKey || fileBusy) return;
-  if (key === 'z') selectTool('zoom');
+  if (key === 'shift' && hover) {
+    hover.free = true;
+    scheduleDraw();
+  } else if (key === 'z') selectTool('zoom');
   else if (key === 'v') selectTool('select');
   else if (event.code === 'Space' && event.target === stage) {
     event.preventDefault();
@@ -1133,15 +1155,26 @@ window.addEventListener('keydown', event => {
     selection.clear();
     renderAll();
   } else if (key === 'delete' && !drag) removeSelection();
-  else if (key === 'enter' && event.target === stage && ['floor', 'color'].includes(tool)) finishPolygon();
+  else if (key === 'enter' && event.target === stage && ['floor', 'color'].includes(tool)) finishPolygon(event.shiftKey);
 });
 
 function stopSpace() {
   space = false;
   stage.classList.toggle('is-panning', drag?.type === 'pan');
 }
-window.addEventListener('keyup', event => { if (event.code === 'Space') stopSpace(); });
-window.addEventListener('blur', stopSpace);
+function releaseFreeAngle() {
+  if (!hover?.free) return;
+  hover.free = false;
+  scheduleDraw();
+}
+window.addEventListener('keyup', event => {
+  if (event.code === 'Space') stopSpace();
+  if (event.key === 'Shift' && !event.shiftKey) releaseFreeAngle();
+});
+window.addEventListener('blur', () => {
+  stopSpace();
+  releaseFreeAngle();
+});
 window.addEventListener('beforeunload', event => {
   if (!dirty()) return;
   event.preventDefault();

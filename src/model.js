@@ -49,6 +49,45 @@ export const rotate = ([x, y], angle) => {
 export const add = (a, b) => a.map((x, i) => x + b[i]);
 export const sub = (a, b) => a.map((x, i) => x - b[i]);
 
+export function isDrawingAngle(a, b) {
+  const [dx, dy] = sub(b, a).map(Math.abs);
+  const epsilon = 1e-7;
+  return dx < epsilon || dy < epsilon || Math.abs(dx - dy) < epsilon;
+}
+
+export function snapDrawingAngle(point, origin) {
+  const [dx, dy] = sub(point, origin);
+  const limit = Math.SQRT2 - 1;
+  if (Math.abs(dy) <= Math.abs(dx) * limit) return [point[0], origin[1]];
+  if (Math.abs(dx) <= Math.abs(dy) * limit) return [origin[0], point[1]];
+  const diagonal = (Math.abs(dx) + Math.abs(dy)) / 2;
+  return add(origin, [Math.sign(dx) * diagonal, Math.sign(dy) * diagonal]);
+}
+
+const drawingDirections = [[1, 0], [0, 1], [1, 1], [1, -1]];
+const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
+
+export function snapClosingCorner(point, previous, first, tolerance) {
+  const delta = sub(first, previous);
+  let nearest = null;
+  let best = tolerance;
+  for (const out of drawingDirections) {
+    for (const back of drawingDirections) {
+      const determinant = cross(out, back);
+      if (!determinant) continue;
+      const offset = cross(delta, back) / determinant;
+      const candidate = add(previous, out.map(value => value * offset));
+      if (lengthOf(candidate, previous) < 0.5 || lengthOf(candidate, first) < 0.5) continue;
+      const distance = lengthOf(candidate, point);
+      if (distance < best) {
+        nearest = candidate;
+        best = distance;
+      }
+    }
+  }
+  return nearest;
+}
+
 export const PROJECT_VERSION = 3;
 export const OBJECT_LIMIT = 10000;
 
