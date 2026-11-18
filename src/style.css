@@ -75,6 +75,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #stage .drag-handle { cursor: crosshair; pointer-events: all; }
 #stage.temporary-selection, #stage.temporary-selection * { cursor: default; }
 #stage.part-placement-cursor, #stage.part-placement-cursor * { cursor: none; }
+#stage .resize-edge { pointer-events: none; }
+#stage[data-tool="select"] .resize-edge { pointer-events: stroke; }
+#stage[data-tool="select"] :is([data-handle="e"], [data-handle="w"]) { cursor: ew-resize; }
+#stage[data-tool="select"] :is([data-handle="n"], [data-handle="s"]) { cursor: ns-resize; }
 .paper { stroke: #d4ded7; stroke-width: 1; vector-effect: non-scaling-stroke; filter: drop-shadow(0 6px 13px #263b2e17); }
 #scene text { font-family: 'Madori Drawing', 'Meiryo', sans-serif; }
 .canvas-title { pointer-events: none; position: absolute; z-index: 1; top: 18px; left: 19px; display: flex; align-items: center; gap: 7px; padding: 5px 9px; font-size: 11px; color: #53675d; background: #f9fbfa; border: 1px solid #dae4dd; border-radius: 5px; }

@@ -4,7 +4,9 @@ import {
   add, alignFinalCorner, blank, clamp, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, parts, positionOpening, roomColors,
   projectOnWall, rotate, snapClosingCorner, snapDrawingAngle, sub, syncOpenings, uid, wallDirection,
 } from './model.js';
-import { escapeHtml, objectBounds, polygonBounds, renderScene, rotatedBounds, svgDocument } from './scene.js';
+import {
+  escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, wallDrawingGeometry,
+} from './scene.js';
 import {
   detectImageFormat, download, exportSetup, makeExport, readProject, renderUnderlay, saveProject, UNDERLAY_LIMIT,
 } from './files.js';
@@ -52,7 +54,11 @@ const rasterUrls = new Set();
 const SNAP_RADIUS = 16;
 const SNAP_RELEASE_RADIUS = 22;
 const HANDLES = ['nw', 'ne', 'se', 'sw'];
-const DIRECTIONS = { nw: [-1, -1], ne: [1, -1], se: [1, 1], sw: [-1, 1] };
+const EDGE_HANDLES = ['n', 'e', 's', 'w'];
+const DIRECTIONS = {
+  nw: [-1, -1], ne: [1, -1], se: [1, 1], sw: [-1, 1],
+  n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0],
+};
 const HISTORY_LIMIT = 60;
 
 const doc = () => state.doc;
@@ -210,7 +216,10 @@ function renderInspector() {
     inspector.innerHTML = (item.kind ? `<span class="inspector-name">${parts[item.kind].name}</span>` : '')
       + propertyMarkup(item) + removeButton();
   } else if (items.length > 1) {
-    inspector.innerHTML = `<p class="inspector-placeholder">${items.length}個の図形を選択中</p>${removeButton()}`;
+    const walls = items.filter(item => item.layer === 'wall' && canEditItem(item));
+    const width = walls.length && walls.every(wall => wall.width === walls[0].width) ? walls[0].width : null;
+    inspector.innerHTML = `<p class="inspector-placeholder">${items.length}個の図形を選択中</p>`
+      + (walls.length ? numberField('壁の太さ', 'selected-wallWidth', width, 1, 80) : '') + removeButton();
   } else {
     inspector.innerHTML = '<p class="inspector-placeholder">図形を選ぶと、ここに設定が表示されます。</p>';
   }
@@ -293,6 +302,20 @@ function handlesMarkup(items) {
   const edge = (a, b, c = 'none') =>
     `<path pointer-events="none" d="M${a[0]} ${a[1]}L${b[0]} ${b[1]}" stroke-dasharray="${c}"/>`;
   const handle = (point, id) => `<circle class="drag-handle" data-handle="${id}" cx="${point[0]}" cy="${point[1]}" r="${radius}" fill="#ffffff"/>`;
+  const selectionEdges = box => {
+    const points = corners(box);
+    return points.map((point, i) => {
+      const next = points[(i + 1) % 4];
+      const side = EDGE_HANDLES[i];
+      const [axisX] = DIRECTIONS[side];
+      const dimension = axisX ? box.width : box.height;
+      const target = dimension > 0.01
+        ? `<path class="resize-edge" data-handle="${side}" d="M${point.join(' ')}L${next.join(' ')}"
+            stroke="transparent" stroke-width="${12 / view.scale}"/>`
+        : '';
+      return edge(point, next, `${4 / view.scale} ${3 / view.scale}`) + target;
+    }).join('');
+  };
   let draw = '';
   if (selection.has('underlay') && doc().underlay && editable('underlay')) {
     const { at, scale, naturalWidth, naturalHeight, angle } = doc().underlay;
@@ -302,16 +325,17 @@ function handlesMarkup(items) {
       + points.map((point, i) => handle(point, HANDLES[i])).join('');
   } else if (items.length === 1 && items[0].layer === 'wall') {
     const item = items[0];
-    draw = edge(item.a, item.b) + handle(item.a, 'wall-a') + handle(item.b, 'wall-b');
+    const box = boundsOf(items);
+    draw = (box.width > 0.01 && box.height > 0.01 ? selectionEdges(box) : edge(item.a, item.b))
+      + handle(item.a, 'wall-a') + handle(item.b, 'wall-b');
   } else if (items.length === 1 && items[0].layer === 'opening') {
     const item = items[0];
     const left = add(item.at, rotate([-item.w / 2, 0], item.angle));
     const right = add(item.at, rotate([item.w / 2, 0], item.angle));
     draw = edge(left, right) + handle(left, 'part-left') + handle(right, 'part-right');
   } else if (items.length) {
-    const points = corners(boundsOf(items));
-    draw = points.map((point, i) => edge(point, points[(i + 1) % 4], `${4 / view.scale} ${3 / view.scale}`)).join('')
-      + points.map((point, i) => handle(point, HANDLES[i])).join('');
+    const box = boundsOf(items);
+    draw = selectionEdges(box) + corners(box).map((point, i) => handle(point, HANDLES[i])).join('');
     if (items.length === 1 && items[0].points) {
       draw += items[0].points.map((point, i) => handle(point, 'vertex-' + i)).join('');
     }
@@ -805,21 +829,28 @@ function resizeOpening(item, graph, handle, to) {
   if (wall) positionOpening(item, wall, projectOnWall(item.at, wall).t);
 }
 
-function resizeGroup(graph, items, handle, to, proportional) {
+function resizeGroup(graph, items, handle, from, to, proportional) {
   const box = boundsOf(items);
   const [signX, signY] = DIRECTIONS[handle];
   const anchor = [box.x + (signX < 0 ? box.width : 0), box.y + (signY < 0 ? box.height : 0)];
   const [dx, dy] = sub(to, anchor);
-  let sx = box.width > 0.01 ? clamp(signX * dx / box.width, 0.03, 30) : 1;
-  let sy = box.height > 0.01 ? clamp(signY * dy / box.height, 0.03, 30) : 1;
-  if (proportional) sx = sy = box.width >= box.height ? sx : sy;
-  const scalePoint = p => [anchor[0] + (p[0] - anchor[0]) * sx, anchor[1] + (p[1] - anchor[1]) * sy];
-  const walls = new Set(items.filter(item => item.layer === 'wall').map(item => item.id));
+  const side = !signX || !signY;
+  const delta = sub(to, from);
+  let sx = signX && box.width > 0.01 ? clamp(side ? 1 + signX * delta[0] / box.width : signX * dx / box.width, 0.03, 30) : 1;
+  let sy = signY && box.height > 0.01 ? clamp(side ? 1 + signY * delta[1] / box.height : signY * dy / box.height, 0.03, 30) : 1;
+  if (proportional && !side) sx = sy = box.width >= box.height ? sx : sy;
+  const scalePoint = ([x, y]) => [
+    sx === 1 ? x : anchor[0] + (x - anchor[0]) * sx,
+    sy === 1 ? y : anchor[1] + (y - anchor[1]) * sy,
+  ];
+  const wallItems = items.filter(item => item.layer === 'wall');
+  if (wallItems.some(item => lengthOf(scalePoint(item.a), scalePoint(item.b)) < 1)) return;
+  const walls = new Set(wallItems.map(item => item.id));
   for (const item of items) {
     if (item.a) {
-      const a = scalePoint(item.a);
-      const b = scalePoint(item.b);
-      if (lengthOf(a, b) >= 1) Object.assign(item, { a, b, width: clamp(item.width * Math.min(sx, sy), 1, 80) });
+      item.a = scalePoint(item.a);
+      item.b = scalePoint(item.b);
+      if (!side) item.width = clamp(item.width * Math.min(sx, sy), 1, 80);
     } else if (item.points) item.points = item.points.map(scalePoint);
     else {
       item.at = scalePoint(item.at);
@@ -856,7 +887,7 @@ function handleDrag(graph, current, point, proportional) {
     syncOpenings(graph, item.id);
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
-  else resizeGroup(graph, items, handle, point, proportional);
+  else resizeGroup(graph, items, handle, current.start, point, proportional);
 }
 
 function updateDrag(event) {
@@ -924,11 +955,9 @@ function finishMarquee(current, addToSelection) {
 
   if (!addToSelection) selection.clear();
   selection.delete('underlay');
-  const { x, y, width, height } = current.bounds;
+  const geometry = wallDrawingGeometry(doc().objects);
   for (const item of doc().objects) {
-    if (!canEditItem(item)) continue;
-    const box = objectBounds(item);
-    if (box.x >= x && box.y >= y && box.x + box.width <= x + width && box.y + box.height <= y + height) {
+    if (objectIntersectsBox(item, current.bounds, geometry.get(item.id)?.segments) && canEditItem(item)) {
       selection.add(item.id);
     }
   }
@@ -1254,6 +1283,11 @@ document.addEventListener('change', event => {
     if (key === 'color') defaults.room = 'custom';
     renderContext();
     scheduleDraw();
+  } else if (group === 'selected' && key === 'wallWidth') {
+    const walls = new Set(selectedObjects().filter(item => item.layer === 'wall' && canEditItem(item)).map(item => item.id));
+    if (walls.size) commit(graph => {
+      for (const item of graph.objects) if (walls.has(item.id)) item.width = value;
+    }, '選択した壁の太さを変更しました。');
   } else if (group === 'object') {
     const item = selectedObjects()[0];
     if (item && canEditItem(item)) modifyObject(item.id, key, value);

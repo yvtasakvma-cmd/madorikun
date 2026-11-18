@@ -189,17 +189,47 @@ function textDrawing(item, color, halo, font) {
   </g>`;
 }
 
-export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, font = null, entries = false } = {}) {
-  const wallMap = new Map(doc.objects.filter(item => item.layer === 'wall').map(item => [item.id, item]));
-  const grouped = new Map(doc.layers.map(layer => [layer.id, []]));
-  for (const item of doc.objects) grouped.get(item.layer)?.push(item);
+export function wallDrawingGeometry(objects) {
+  const walls = objects.filter(item => item.layer === 'wall');
   const openings = new Map();
-  for (const item of grouped.get('opening')) {
-    if (!item.wallId) continue;
+  for (const item of objects) {
+    if (item.layer !== 'opening' || !item.wallId) continue;
     if (!openings.has(item.wallId)) openings.set(item.wallId, []);
     openings.get(item.wallId).push(item);
   }
-  const caps = wallJunctionCaps(grouped.get('wall'), openings);
+  const caps = wallJunctionCaps(walls, openings);
+  return new Map(walls.map(wall => [
+    wall.id, { wall, segments: wallSegments(wall, openings.get(wall.id), caps.get(wall.id)) },
+  ]));
+}
+
+function strokeIntersectsBox(a, b, width, box) {
+  const length = lengthOf(a, b);
+  const ux = length ? (b[0] - a[0]) / length : 1;
+  const uy = length ? (b[1] - a[1]) / length : 0;
+  const dx = (a[0] + b[0]) / 2 - (box.x + box.width / 2);
+  const dy = (a[1] + b[1]) / 2 - (box.y + box.height / 2);
+  return [[1, 0], [0, 1], [ux, uy], [-uy, ux]].every(([x, y]) => {
+    const extent = (length * Math.abs(x * ux + y * uy) + width * Math.abs(-x * uy + y * ux)
+      + box.width * Math.abs(x) + box.height * Math.abs(y)) / 2;
+    return Math.abs(x * dx + y * dy) <= extent + 1e-7;
+  });
+}
+
+export function objectIntersectsBox(item, box, segments) {
+  if (item.layer === 'wall') return segments.some(([a, b]) => strokeIntersectsBox(a, b, item.width, box));
+  const bounds = objectBounds(item);
+  if (bounds.x > box.x + box.width || bounds.x + bounds.width < box.x
+    || bounds.y > box.y + box.height || bounds.y + bounds.height < box.y) return false;
+  if (!item.points) return true;
+  return pointInPolygon([box.x, box.y], item.points) || item.points.some((p, i) =>
+    strokeIntersectsBox(p, item.points[(i + 1) % item.points.length], 0, box));
+}
+
+export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, font = null, entries = false } = {}) {
+  const geometry = wallDrawingGeometry(doc.objects);
+  const grouped = new Map(doc.layers.map(layer => [layer.id, []]));
+  for (const item of doc.objects) grouped.get(item.layer)?.push(item);
   const fills = doc.layers.filter(layer => layer.visible && layer.id === 'color')
     .flatMap(layer => grouped.get(layer.id));
   const color = mono ? '#000000' : ink;
@@ -219,7 +249,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
       } else if (item.layer === 'wall') {
-        const segments = wallSegments(item, openings.get(item.id), caps.get(item.id));
+        const segments = geometry.get(item.id).segments;
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
         drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}">${drawing}</g>`;
       } else if (item.layer === 'text') {
@@ -227,7 +257,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';
         drawing = textDrawing(item, color, halo, font);
       } else {
-        const frame = wallMap.get(item.wallId)?.width ?? Math.min(10, Math.max(4, item.h));
+        const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
           ${partDrawing(item.kind, item.w, item.h, mono, frame)}
         </g>`;

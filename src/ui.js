@@ -145,7 +145,7 @@ export function layout() {
 }
 
 export const numberField = (label, key, value, min, max, step = 1) =>
-  `<label class="field">${label}<input type="number" data-field="${key}" value="${Number(value.toFixed(2))}" min="${min}" max="${max}" step="${step}"></label>`;
+  `<label class="field">${label}<input type="number" data-field="${key}" value="${value === null ? '' : Number(value.toFixed(2))}" ${value === null ? 'placeholder="混在"' : ''} min="${min}" max="${max}" step="${step}"></label>`;
 
 export const selectField = (label, key, value, options) =>
   `<label class="field">${label}<select data-field="${key}">${options.map(([id, name]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>`;
