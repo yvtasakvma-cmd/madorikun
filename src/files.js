@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, TOILET_DESIGNS, uid } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
@@ -65,6 +65,9 @@ function validateProject(doc, underlay, assetPath) {
         && number(item.angle) && number(item.w, 4, 50000) && number(item.h, 1, 50000)
         && flag(item.flipX) && flag(item.flipY));
       if (item.wallId !== undefined) ensure(item.layer === 'opening' && string(item.wallId, 120) && number(item.t, 0, 1));
+      if (item.variant !== undefined) {
+        ensure(item.kind === 'toilet' && string(item.variant, 20) && Object.hasOwn(TOILET_DESIGNS, item.variant));
+      }
       if (item.strokeWidth !== undefined) {
         ensure(number(item.strokeWidth, PART_STROKE.min, PART_STROKE.max));
       }

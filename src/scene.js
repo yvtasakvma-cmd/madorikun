@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, lengthOf, PART_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
+import { add, DEFAULT_TEXT_FONT, DEFAULT_TOILET_DESIGN, floors, lengthOf, PART_STROKE, rotate, TEXT_FONTS, wallJunctionCaps, wallSegments } from './model.js';
 import { washerLabel } from './washer-label.js';
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
@@ -8,7 +8,24 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = PART_STROKE.defaultWidth) {
+function toiletDrawing(variant, w, h, rect) {
+  if (variant === 'tankless') {
+    return `<path d="M${-w * 0.39} ${-h * 0.19}Q${-w * 0.39} ${-h * 0.43} 0 ${-h * 0.43}
+      Q${w * 0.39} ${-h * 0.43} ${w * 0.39} ${-h * 0.19}V${h * 0.02}
+      C${w * 0.39} ${h * 0.62} ${-w * 0.39} ${h * 0.62} ${-w * 0.39} ${h * 0.02}Z"/>
+      <ellipse cy="${h * 0.08}" rx="${w * 0.25}" ry="${h * 0.28}"/>`;
+  }
+  if (variant === 'square') {
+    return rect(-w * 0.43, -h / 2, w * 0.86, h * 0.25, 'none', 1.3)
+      + rect(-w * 0.39, -h * 0.25, w * 0.78, h * 0.73, 'none', w * 0.12)
+      + rect(-w * 0.26, -h * 0.13, w * 0.52, h * 0.46, 'none', w * 0.09);
+  }
+  return rect(-w * 0.36, -h / 2, w * 0.72, h * 0.25, 'none', 2)
+    + `<ellipse cy="${h * 0.12}" rx="${w * 0.38}" ry="${h * 0.36}"/>
+       <ellipse cy="${h * 0.13}" rx="${w * 0.25}" ry="${h * 0.25}"/>`;
+}
+
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth = PART_STROKE.defaultWidth, variant = DEFAULT_TOILET_DESIGN) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -46,9 +63,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         + circle(0, -h * 0.35, Math.min(w, h) * 0.05);
       break;
     case 'toilet':
-      body = rect(w * -0.36, y, w * 0.72, h * 0.25, 'none', 2)
-        + `<ellipse cy="${h * 0.12}" rx="${w * 0.38}" ry="${h * 0.36}"/>
-           <ellipse cy="${h * 0.13}" rx="${w * 0.25}" ry="${h * 0.25}"/>`;
+      body = toiletDrawing(variant, w, h, rect);
       break;
     case 'kitchen': {
       const ring = Math.min(w * 0.043, h * 0.13);
@@ -289,7 +304,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         const hit = entries && item.layer === 'fixture'
           ? `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" fill="transparent"/>` : '';
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, item.variant)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };
