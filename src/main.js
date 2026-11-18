@@ -909,7 +909,6 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
     if (item.a) {
       item.a = scalePoint(item.a);
       item.b = scalePoint(item.b);
-      if (!side) item.width = clamp(item.width * Math.min(sx, sy), 1, 80);
     } else if (item.points) item.points = item.points.map(scalePoint);
     else {
       item.at = scalePoint(item.at);
