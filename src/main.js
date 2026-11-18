@@ -47,6 +47,8 @@ let view = { x: 0, y: 0, scale: 1 };
 let previewSerial = 0;
 let previewSetup = null;
 const rasterUrls = new Set();
+const CLOSE_SNAP_RADIUS = 16;
+const CLOSE_RELEASE_RADIUS = 22;
 const HANDLES = ['nw', 'ne', 'se', 'sw'];
 const DIRECTIONS = { nw: [-1, -1], ne: [1, -1], se: [1, 1], sw: [-1, 1] };
 const HISTORY_LIMIT = 60;
@@ -318,13 +320,19 @@ function handlesMarkup(items) {
 function draftMarkup() {
   let markup = '';
   if (pending.length) {
-    const closing = hover && tool !== 'wall' && isClosingPoint(hover.point) ? polygonForClosure(hover.free) : null;
+    const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
     const vertices = closing ?? pending;
     const points = hover ? [...vertices, closing ? vertices[0] : drawingPoint(hover.point, hover.free)] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}" opacity=".8"/>`;
     for (const [x, y] of vertices) markup += `<circle cx="${x}" cy="${y}" r="${4 / view.scale}" fill="#20765f"/>`;
+    if (closing) {
+      const [x, y] = vertices[0];
+      markup += `<circle cx="${x}" cy="${y}" r="${10 / view.scale}" fill="#ffdea0" opacity=".84"/>
+        <circle class="closing-target" cx="${x}" cy="${y}" r="${5.5 / view.scale}" fill="#b65200"
+          stroke="#ffffff" stroke-width="${1.5 / view.scale}"/>`;
+    }
   }
   if (draftPart) {
     const draftDoc = { ...doc(), objects: [draftPart] };
@@ -408,7 +416,9 @@ function snapWallPoint(point, { excluded = new Set(), origin, free = false } = {
 }
 
 function isClosingPoint(point) {
-  return pending.length >= 3 && lengthOf(point, pending[0]) < 10 / view.scale;
+  if (pending.length < 3 || (tool !== 'floor' && tool !== 'color')) return false;
+  const radius = hover?.atStart ? CLOSE_RELEASE_RADIUS : CLOSE_SNAP_RADIUS;
+  return lengthOf(point, pending[0]) * view.scale <= radius;
 }
 
 function drawingPoint(point, free) {
@@ -731,9 +741,16 @@ stage.addEventListener('pointermove', event => {
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
   } else if (pending.length) {
-    hover = { point: toWorld(screenPoint(event)), free: event.shiftKey };
+    const point = toWorld(screenPoint(event));
+    hover = { point, free: event.shiftKey, atStart: isClosingPoint(point) };
     scheduleDraw();
   }
+});
+
+stage.addEventListener('pointerleave', () => {
+  if (!hover) return;
+  hover = null;
+  scheduleDraw();
 });
 
 stage.addEventListener('pointerup', event => {
