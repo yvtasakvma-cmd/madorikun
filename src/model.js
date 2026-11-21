@@ -415,6 +415,79 @@ export function syncOpenings(doc, wallId) {
 
 export const isWallSegment = item => item?.layer === 'wall' && item.kind !== 'column';
 export const wallDashArray = width => `${width * 2} ${width * 1.25}`;
+const wallEndCaps = wall => [0, 1].map(end => wall.cutEnds?.[end] ? 0 : wall.width / 2);
+
+function regroupCutWall(walls, group) {
+  const byEndpoint = new Map();
+  const remaining = new Set(walls.filter(wall => wall.wallGroup === group));
+  for (const wall of remaining) {
+    for (const point of [wall.a, wall.b]) {
+      const key = point.join(',');
+      if (!byEndpoint.has(key)) byEndpoint.set(key, []);
+      byEndpoint.get(key).push(wall);
+    }
+  }
+  for (const wall of remaining) {
+    const component = [wall];
+    remaining.delete(wall);
+    for (const member of component) {
+      for (const point of [member.a, member.b]) {
+        const key = point.join(',');
+        for (const neighbor of byEndpoint.get(key) ?? []) {
+          if (remaining.delete(neighbor)) component.push(neighbor);
+        }
+        byEndpoint.delete(key);
+      }
+    }
+    if (component.length === 1) delete wall.wallGroup;
+    else {
+      const groupId = uid();
+      for (const member of component) member.wallGroup = groupId;
+    }
+  }
+}
+
+export function cutWall(graph, wallId, first, second) {
+  const index = graph.objects.findIndex(wall => wall.id === wallId);
+  const wall = graph.objects[index];
+  if (!isWallSegment(wall)) return { error: 'missing' };
+  const length = lengthOf(wall.a, wall.b);
+  const nearEnd = 1 / length;
+  const low = Math.min(first, second);
+  const high = Math.max(first, second);
+  if ((high - low) * length < 1) return { error: 'short' };
+  const start = low <= nearEnd ? 0 : low;
+  const end = high >= 1 - nearEnd ? 1 : high;
+  const ranges = [
+    ...(start > 0 ? [{ from: 0, to: start }] : []),
+    { from: start, to: end, selected: true },
+    ...(end < 1 ? [{ from: end, to: 1 }] : []),
+  ];
+  if (graph.objects.length + ranges.length - 1 > OBJECT_LIMIT) return { error: 'limit' };
+
+  const placements = [];
+  for (const part of graph.objects) {
+    if (part.wallId !== wall.id) continue;
+    const half = part.w / (2 * length);
+    const host = ranges.find(({ from, to }) => part.t - half >= from - 1e-7 && part.t + half <= to + 1e-7);
+    if (!host) return { error: 'opening' };
+    placements.push({ part, host });
+  }
+  const segment = t => t === 0 ? wall.a : t === 1 ? wall.b : lerp(wall.a, wall.b, t);
+  const pieces = ranges.map(range => {
+    const { from, to, selected } = range;
+    const piece = { ...wall, id: from === 0 ? wall.id : uid(), a: segment(from), b: segment(to),
+      cutEnds: [from > 0 || Boolean(wall.cutEnds?.[0]), to < 1 || Boolean(wall.cutEnds?.[1])] };
+    if (selected) delete piece.wallGroup;
+    range.piece = piece;
+    return piece;
+  });
+  if (pieces.some(piece => lengthOf(piece.a, piece.b) < 1)) return { error: 'short' };
+  graph.objects.splice(index, 1, ...pieces);
+  if (wall.wallGroup) regroupCutWall(graph.objects, wall.wallGroup);
+  for (const { part, host } of placements) positionOpening(part, host.piece, (part.t - host.from) / (host.to - host.from));
+  return { id: ranges.find(range => range.selected).piece.id };
+}
 
 export function wallDirection(wall) {
   if (wall.a[1] === wall.b[1]) return 0;
@@ -496,7 +569,7 @@ function addAngledWallJoins(walls, openings, byDirection, joints) {
     wedge.push(b, add(b, v.map(value => value * overlap[1])));
 
     for (const { wall, end } of ends) {
-      const joint = joints.get(wall.id) ?? { caps: [wall.width / 2, wall.width / 2] };
+      const joint = joints.get(wall.id) ?? { caps: wallEndCaps(wall) };
       joint.joinedEnds ??= [false, false];
       joint.joinedEnds[end] = true;
       joint.caps[end] = 0;
@@ -564,19 +637,20 @@ export function wallJunctions(walls, openings) {
     const crossWalls = byDirection[1 - axis];
     const searchRadius = maxHalfWidth[1 - axis];
     for (const wall of byDirection[axis]) {
-      const defaultCap = wall.width / 2;
-      const radius = Math.max(searchRadius, defaultCap);
+      const halfWidth = wall.width / 2;
+      const radius = Math.max(searchRadius, halfWidth);
       const size = lengthOf(wall.a, wall.b);
       const direction = Math.sign(wall.b[axis] - wall.a[axis]);
+      const caps = wallEndCaps(wall);
       const ends = [wall.a, wall.b].map((tip, index) => {
-        let cap = defaultCap;
+        let cap = caps[index];
         const outward = index === 0 ? -direction : direction;
         const first = firstWallAtOrBeyond(crossWalls, axis, tip[axis] - radius);
         for (let i = first; i < crossWalls.length; i++) {
           const mate = crossWalls[i];
           const offset = mate.a[axis] - tip[axis];
           if (offset > radius) break;
-          if (Math.abs(offset) > Math.max(defaultCap, mate.width / 2) || offset * outward <= -size) continue;
+          if (Math.abs(offset) > Math.max(halfWidth, mate.width / 2) || offset * outward <= -size) continue;
           const section = 1 - axis;
           const span = mate.b[section] - mate.a[section];
           const t = (tip[section] - mate.a[section]) / span;
@@ -598,7 +672,7 @@ export function wallJunctions(walls, openings) {
   return joints;
 }
 
-export function wallSegments(wall, openings, caps = [wall.width / 2, wall.width / 2]) {
+export function wallSegments(wall, openings, caps = wallEndCaps(wall)) {
   const size = lengthOf(wall.a, wall.b);
   if (!size) return [];
   const intervals = (openings ?? []).map(part => {

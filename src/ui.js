@@ -11,6 +11,7 @@ const icons = {
   select: 'm5 3 14 10-7 1-3 7z',
   floor: 'M3 4h18v16H3zM9 4v16m6-16v16M3 11h6m6 2h6',
   wall: 'M3 5h18v14H3zM3 12h18M8 5v7m8 0v7',
+  scissors: 'M9 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm0 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM8 10l12 8M8 14l12-8',
   door: 'M4 20V4h15v16M4 20h16M8 20V6l8 3v11M11 14h.1',
   bath: 'M3 13h18v2a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4zM6 13V6a3 3 0 1 1 6 0M7 19l-1 2m11-2 1 2',
   text: 'M4 6V4h16v2M12 4v16M8 20h8',
@@ -193,6 +194,8 @@ function splitPartButton(id, title, control) {
 export function partPalette(layer, current, designs) {
   const wallLine = layer === 'wall' ? `<button type="button" data-action="wall-line" aria-pressed="${!current}">
     ${icon('wall', 24)}<span>壁線</span></button>` : '';
+  const scissors = layer === 'wall' ? `<button type="button" data-action="wall-cut" aria-pressed="${current === 'scissors'}">
+    ${icon('scissors', 24)}<span>ハサミ</span></button>` : '';
   return '<div class="part-palette">' + wallLine + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
     if (id === 'bathDivider') return '';
     if (id === 'bath') {
@@ -212,7 +215,7 @@ export function partPalette(layer, current, designs) {
     }
     const control = partButton(id, part.name, designs[id], current === id);
     return Object.hasOwn(PART_DESIGNS, id) ? splitPartButton(id, part.name, control) : control;
-  }).join('') + '</div>';
+  }).join('') + scissors + '</div>';
 }
 
 export function partDesignChoices(kind, current) {

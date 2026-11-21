@@ -1,7 +1,7 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -47,6 +47,7 @@ partDesigns.stove = 'stove2';
 let pending = [];
 let dividerStartFrame;
 let wallChain = null;
+let wallCutStart = null;
 let temporarySelection = false;
 let hover = null;
 let draftPart = null;
@@ -62,7 +63,7 @@ const rasterUrls = new Set();
 const SNAP_RADIUS = 16;
 const SNAP_RELEASE_RADIUS = 22;
 const FIXTURE_SNAP_RADIUS = 6;
-const fixtureSnapWalls = new WeakMap();
+const wallGeometryCache = new WeakMap();
 const HANDLES = ['nw', 'ne', 'se', 'sw'];
 const EDGE_HANDLES = ['n', 'e', 's', 'w'];
 const DIRECTIONS = {
@@ -147,6 +148,7 @@ function clearDraft() {
   pending = [];
   dividerStartFrame = undefined;
   wallChain = null;
+  wallCutStart = null;
   hover = null;
   draftPart = null;
 }
@@ -154,8 +156,8 @@ function clearDraft() {
 function selectTool(next, { keepSelection = false } = {}) {
   if (drag) cancelDrag();
   tool = next;
-  if (next !== 'select') contextTool = next;
-  if (next === 'wall') columnPlacement = false;
+  if (next !== 'select') contextTool = next === 'scissors' ? 'wall' : next;
+  if (next === 'wall' || next === 'scissors') columnPlacement = false;
   if (partDesignMenu.matches(':popover-open')) partDesignMenu.hidePopover();
   clearDraft();
   if (!keepSelection) selection.clear();
@@ -171,6 +173,7 @@ function fieldInstructions(title) {
     select: '空いている所からドラッグで複数選択 · 図形をドラッグで移動',
     wall: columnPlacement ? '柱をドラッグ、または配置する場所をクリック'
       : 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
+    scissors: wallCutStart ? '同じ壁線上の終点をクリック · Escで中断' : '壁線上の切り出したい区間の始点をクリック',
     floor: '角をクリックして囲む · Ctrl＋Zで角を一つ戻す · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
@@ -183,8 +186,8 @@ function fieldInstructions(title) {
 function renderContext() {
   const title = tools.find(item => item.id === contextTool).name;
   let controls = '';
-  if (contextTool === 'wall') controls = partPalette('wall', columnPlacement ? 'column' : '', partDesigns)
-    + (columnPlacement ? '' : numberField('太さ', 'default-width', defaults.width, 1, 80)
+  if (contextTool === 'wall') controls = partPalette('wall', tool === 'scissors' ? 'scissors' : columnPlacement ? 'column' : '', partDesigns)
+    + (columnPlacement || tool === 'scissors' ? '' : numberField('太さ', 'default-width', defaults.width, 1, 80)
       + checkField('破線', 'default-dashed', defaults.dashed));
   if (contextTool === 'floor') {
     const { pattern } = floors[defaults.preset];
@@ -471,6 +474,15 @@ function draftMarkup(wall) {
     markup += snapMarker(hover.wallTarget, 'wall-snap-target');
   }
   if (divider?.frameId) markup += snapMarker(divider.point, 'divider-snap-target');
+  if (tool === 'scissors' && !temporarySelection) {
+    const end = hover?.cut;
+    if (wallCutStart && end) {
+      markup += `<path class="wall-cut-preview" d="M${wallCutStart.point.join(' ')}L${end.point.join(' ')}"
+        stroke="#23876d" stroke-width="${end.wall.width + 3 / view.scale}" opacity=".68"/>`;
+    }
+    if (wallCutStart) markup += snapMarker(wallCutStart.point, 'wall-cut-start');
+    if (end) markup += snapMarker(end.point, 'wall-cut-target');
+  }
   if (draftPart && !temporarySelection && !drag) {
     const host = itemBy(draftPart.wallId);
     const draftDoc = { ...doc(), objects: host ? [host, draftPart] : [draftPart] };
@@ -643,6 +655,68 @@ function wallSnapTarget(point, stickyTarget, accepts) {
   return nearestWallEndpoint(point, { radius: SNAP_RADIUS, accepts });
 }
 
+function wallGeometry(graph) {
+  if (!wallGeometryCache.has(graph)) wallGeometryCache.set(graph, wallDrawingGeometry(graph.objects));
+  return wallGeometryCache.get(graph);
+}
+
+function wallCutPoint(point) {
+  if (!editable('wall')) return null;
+  const geometry = wallGeometry(doc());
+  const candidates = wallCutStart ? [geometry.get(wallCutStart.wall.id)] : geometry.values();
+  let nearest = null;
+  let best = Infinity;
+  for (const entry of candidates) {
+    if (!entry || !canEditItem(entry.wall)) continue;
+    const { wall, segments } = entry;
+    for (const [a, b] of segments) {
+      const projection = projectOnWall(point, { a, b });
+      if (projection.distance >= best || projection.distance > wall.width / 2 + 5 / view.scale) continue;
+      const center = lerp(a, b, clamp(projection.t, 0, 1));
+      const length = lengthOf(wall.a, wall.b);
+      const fraction = projectOnWall(center, wall).t;
+      const t = fraction <= 1 / length ? 0 : fraction >= 1 - 1 / length ? 1 : fraction;
+      nearest = { wall, t, point: lerp(wall.a, wall.b, t) };
+      best = projection.distance;
+    }
+  }
+  return nearest;
+}
+
+function cutWallClick(point) {
+  const target = wallCutPoint(point);
+  if (!target) {
+    status(wallCutStart ? '始点と同じ壁線上に終点を指定してください。' : '編集できる壁線上に始点を指定してください。', true);
+    return;
+  }
+  if (!wallCutStart) {
+    wallCutStart = target;
+    hover = null;
+    renderContext();
+    scheduleDraw();
+    return;
+  }
+  let result;
+  const changed = commit(graph => {
+    result = cutWall(graph, target.wall.id, wallCutStart.t, target.t);
+    return !result.error;
+  });
+  if (!changed) {
+    const messages = {
+      short: '終点を始点から離して指定してください。',
+      opening: '窓や扉に重ならない切断位置を指定してください。',
+      limit: '図形数が上限に達するため切断できません。',
+      missing: '切断する壁線を選び直してください。',
+    };
+    status(messages[result.error], true);
+    return;
+  }
+  selection.clear();
+  selection.add(result.id);
+  selectTool('select', { keepSelection: true });
+  status('切り出した壁線を選択しました。Deleteで削除、ドラッグで移動できます。');
+}
+
 function updateDraftHover(point, free) {
   const stickyTarget = hover?.wallTarget;
   const wallTarget = tool !== 'wall' ? null : pending.length
@@ -752,9 +826,8 @@ function snapPart(part, point, graph, excluded = new Set()) {
 
 function snapFixture(part, graph) {
   if (!graph.layers.find(item => item.id === 'wall').visible) return;
-  if (!fixtureSnapWalls.has(graph)) fixtureSnapWalls.set(graph, wallDrawingGeometry(graph.objects));
   const radius = Math.min(FIXTURE_SNAP_RADIUS / view.scale, Math.min(part.w, part.h) / 4);
-  part.at = snapFixtureToWall(part, fixtureSnapWalls.get(graph).values(), radius);
+  part.at = snapFixtureToWall(part, wallGeometry(graph).values(), radius);
 }
 
 function addItem(item, message, adjustment) {
@@ -871,6 +944,10 @@ function finishPolygon(free = false) {
 }
 
 function drawingClick(event, point) {
+  if (tool === 'scissors') {
+    cutWallClick(point);
+    return;
+  }
   if (!editable(tool)) {
     status('「' + names(tool) + '」レイヤーの表示とロックを確認してください。', true);
     return;
@@ -1259,6 +1336,9 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
+  } else if (tool === 'scissors' && !fileBusy) {
+    hover = { cut: wallCutPoint(toWorld(screenPoint(event))) };
+    scheduleDraw();
   } else if (kind && !isDividerPart(kind, partDesigns[kind]) && editable(tool) && !fileBusy) {
     draftPart = paletteItemAt(kind, toWorld(screenPoint(event)));
     scheduleDraw();
@@ -1556,6 +1636,7 @@ function runAction(action, source) {
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
   else if (action === 'wall-line') selectTool('wall');
+  else if (action === 'wall-cut') selectTool('scissors');
   else if (action === 'part-designs') {
     if (!partDesignMenu.matches(':popover-open')) {
       const kind = source.dataset.designKind;

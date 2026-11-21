@@ -58,6 +58,7 @@ function validateProject(doc, underlay, assetPath) {
     if (isWallSegment(item)) {
       ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
       if (item.dashed !== undefined) ensure(flag(item.dashed));
+      if (item.cutEnds !== undefined) ensure(Array.isArray(item.cutEnds) && item.cutEnds.length === 2 && item.cutEnds.every(flag));
     } else if (item.layer === 'floor' || item.layer === 'color') {
       ensure(Array.isArray(item.points) && item.points.length >= 3 && item.points.length <= 1000
         && item.points.every(point));
