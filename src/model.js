@@ -419,9 +419,9 @@ export const isWallSegment = item => item?.layer === 'wall' && item.kind !== 'co
 export const wallDashArray = width => `${width * 2} ${width * 1.25}`;
 const wallEndCaps = wall => [0, 1].map(end => wall.cutEnds?.[end] ? 0 : wall.width / 2);
 
-function regroupCutWall(walls, group) {
+function regroupCutWall(walls) {
   const byEndpoint = new Map();
-  const remaining = new Set(walls.filter(wall => wall.wallGroup === group));
+  const remaining = new Set(walls);
   for (const wall of remaining) {
     for (const point of [wall.a, wall.b]) {
       const key = point.join(',');
@@ -449,46 +449,129 @@ function regroupCutWall(walls, group) {
   }
 }
 
-export function cutWall(graph, wallId, first, second) {
-  const index = graph.objects.findIndex(wall => wall.id === wallId);
-  const wall = graph.objects[index];
-  if (!isWallSegment(wall)) return { error: 'missing' };
-  const length = lengthOf(wall.a, wall.b);
-  const nearEnd = 1 / length;
-  const low = Math.min(first, second);
-  const high = Math.max(first, second);
-  if ((high - low) * length < 1) return { error: 'short' };
-  const start = low <= nearEnd ? 0 : low;
-  const end = high >= 1 - nearEnd ? 1 : high;
-  const ranges = [
-    ...(start > 0 ? [{ from: 0, to: start }] : []),
-    { from: start, to: end, selected: true },
-    ...(end < 1 ? [{ from: end, to: 1 }] : []),
-  ];
-  if (graph.objects.length + ranges.length - 1 > OBJECT_LIMIT) return { error: 'limit' };
+export function wallCutRun(walls, first) {
+  const ends = new Map();
+  for (const wall of walls) {
+    for (const [end, point] of [wall.a, wall.b].entries()) {
+      if (wall.cutEnds?.[end]) continue;
+      const key = point.join(',');
+      if (!ends.has(key)) ends.set(key, []);
+      ends.get(key).push({ wall, end });
+    }
+  }
+  const visited = new Set([first.id]);
+  const axis = sub(first.b, first.a).map(value => value / lengthOf(first.a, first.b));
+  const extend = side => {
+    const run = [];
+    const direction = side ? axis : axis.map(value => -value);
+    let wall = first;
+    let end = side;
+    while (!wall.cutEnds?.[end]) {
+      const tip = end ? wall.b : wall.a;
+      const matches = (ends.get(tip.join(',')) ?? []).filter(candidate => {
+        if (visited.has(candidate.wall.id)) return false;
+        const other = candidate.end ? candidate.wall.a : candidate.wall.b;
+        const vector = sub(other, tip);
+        return Math.abs(cross(direction, vector)) < 1e-7
+          && direction[0] * vector[0] + direction[1] * vector[1] > 0;
+      });
+      if (matches.length !== 1) break;
+      const next = matches[0];
+      visited.add(next.wall.id);
+      run.push({ wall: next.wall, reversed: next.end === side });
+      wall = next.wall;
+      end = 1 - next.end;
+    }
+    return run;
+  };
+  const run = [...extend(0).reverse(), { wall: first, reversed: false }, ...extend(1)];
+  let offset = 0;
+  return new Map(run.map(({ wall, reversed }) => {
+    const length = lengthOf(wall.a, wall.b);
+    const item = { wall, length, offset, reversed };
+    offset += length;
+    return [wall.id, item];
+  }));
+}
 
+function cutDistance(entry, t) {
+  return entry.offset + (entry.reversed ? 1 - t : t) * entry.length;
+}
+
+function cutRanges(entry, start, end, total) {
+  const endpoints = [start, end].map(distance => {
+    const t = clamp((distance - entry.offset) / entry.length, 0, 1);
+    return entry.reversed ? 1 - t : t;
+  });
+  const limits = [0, ...endpoints.filter(t => t > 1e-9 && t < 1 - 1e-9).sort((a, b) => a - b), 1];
+  const isCut = t => {
+    const distance = cutDistance(entry, t);
+    return (start > 1e-7 && Math.abs(distance - start) < 1e-7) || (end < total - 1e-7 && Math.abs(distance - end) < 1e-7);
+  };
+  return limits.slice(1).map((to, index) => {
+    const from = limits[index];
+    const center = cutDistance(entry, (from + to) / 2);
+    return { from, to, selected: center > start && center < end, cutEnds: [isCut(from), isCut(to)] };
+  });
+}
+
+export function cutWall(graph, run, first, second) {
+  const a = run.get(first.wall.id), b = run.get(second.wall.id);
+  if (!a || !b) return { error: 'missing' };
+  const distances = [cutDistance(a, first.t), cutDistance(b, second.t)];
+  const start = Math.min(...distances), end = Math.max(...distances);
+  if (end - start < 1) return { error: 'short' };
+  const tail = [...run.values()].at(-1);
+  const total = tail.offset + tail.length;
+  const plans = new Map();
+  let added = 0;
+  let selectedCount = 0;
+  for (const [id, entry] of run) {
+    const ranges = cutRanges(entry, start, end, total);
+    if (!ranges.some(range => range.selected || range.cutEnds.some(Boolean))) continue;
+    plans.set(id, { ranges, length: entry.length });
+    added += ranges.length - 1;
+    selectedCount += ranges.filter(range => range.selected).length;
+  }
+  if (!selectedCount) return { error: 'short' };
+  if (graph.objects.length + added > OBJECT_LIMIT) return { error: 'limit' };
   const placements = [];
   for (const part of graph.objects) {
-    if (part.wallId !== wall.id) continue;
-    const half = part.w / (2 * length);
-    const host = ranges.find(({ from, to }) => part.t - half >= from - 1e-7 && part.t + half <= to + 1e-7);
+    const plan = plans.get(part.wallId);
+    if (!plan) continue;
+    const half = part.w / (2 * plan.length);
+    const host = plan.ranges.find(({ from, to }) => part.t - half >= from - 1e-7 && part.t + half <= to + 1e-7);
     if (!host) return { error: 'opening' };
     placements.push({ part, host });
   }
-  const segment = t => t === 0 ? wall.a : t === 1 ? wall.b : lerp(wall.a, wall.b, t);
-  const pieces = ranges.map(range => {
-    const { from, to, selected } = range;
-    const piece = { ...wall, id: from === 0 ? wall.id : uid(), a: segment(from), b: segment(to),
-      cutEnds: [from > 0 || Boolean(wall.cutEnds?.[0]), to < 1 || Boolean(wall.cutEnds?.[1])] };
-    if (selected) delete piece.wallGroup;
-    range.piece = piece;
-    return piece;
+  const group = selectedCount > 1 ? uid() : null;
+  const groups = new Map();
+  const ids = [];
+  const objects = graph.objects.flatMap(wall => {
+    const plan = plans.get(wall.id);
+    if (!plan) return wall;
+    if (wall.wallGroup) groups.set(wall.wallGroup, []);
+    const segment = t => t === 0 ? wall.a : t === 1 ? wall.b : lerp(wall.a, wall.b, t);
+    return plan.ranges.map(range => {
+      const { from, to, selected, cutEnds } = range;
+      const piece = { ...wall, id: from === 0 ? wall.id : uid(), a: segment(from), b: segment(to),
+        cutEnds: [cutEnds[0] || (from === 0 && Boolean(wall.cutEnds?.[0])),
+          cutEnds[1] || (to === 1 && Boolean(wall.cutEnds?.[1]))] };
+      if (selected) {
+        if (group) piece.wallGroup = group;
+        else delete piece.wallGroup;
+        ids.push(piece.id);
+      }
+      range.piece = piece;
+      return piece;
+    });
   });
-  if (pieces.some(piece => lengthOf(piece.a, piece.b) < 1)) return { error: 'short' };
-  graph.objects.splice(index, 1, ...pieces);
-  if (wall.wallGroup) regroupCutWall(graph.objects, wall.wallGroup);
+  if ([...plans.values()].some(({ ranges }) => ranges.some(({ piece }) => lengthOf(piece.a, piece.b) < 1))) return { error: 'short' };
+  for (const wall of objects) groups.get(wall.wallGroup)?.push(wall);
+  for (const walls of groups.values()) regroupCutWall(walls);
   for (const { part, host } of placements) positionOpening(part, host.piece, (part.t - host.from) / (host.to - host.from));
-  return { id: ranges.find(range => range.selected).piece.id };
+  graph.objects = objects;
+  return { ids };
 }
 
 export function wallDirection(wall) {

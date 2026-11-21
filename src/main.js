@@ -2,7 +2,7 @@ import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
-  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallCutRun, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
@@ -671,7 +671,8 @@ function wallGeometry(graph) {
 function wallCutPoint(point) {
   if (!editable('wall')) return null;
   const geometry = wallGeometry(doc());
-  const candidates = wallCutStart ? [geometry.get(wallCutStart.wall.id)] : geometry.values();
+  const candidates = wallCutStart?.graph === doc()
+    ? [...wallCutStart.run.keys()].map(id => geometry.get(id)) : geometry.values();
   let nearest = null;
   let best = Infinity;
   for (const entry of candidates) {
@@ -679,26 +680,35 @@ function wallCutPoint(point) {
     const { wall, segments } = entry;
     for (const [a, b] of segments) {
       const projection = projectOnWall(point, { a, b });
-      if (projection.distance >= best || projection.distance > wall.width / 2 + 5 / view.scale) continue;
+      if (projection.distance > wall.width / 2 + 5 / view.scale) continue;
       const center = lerp(a, b, clamp(projection.t, 0, 1));
       const length = lengthOf(wall.a, wall.b);
-      const fraction = projectOnWall(center, wall).t;
+      const fraction = clamp(projectOnWall(center, wall).t, 0, 1);
+      const distance = lengthOf(point, lerp(wall.a, wall.b, fraction));
+      if (distance >= best) continue;
       const t = fraction <= 1 / length ? 0 : fraction >= 1 - 1 / length ? 1 : fraction;
       nearest = { wall, t, point: lerp(wall.a, wall.b, t) };
-      best = projection.distance;
+      best = distance;
     }
   }
   return nearest;
 }
 
 function cutWallClick(point) {
+  if (wallCutStart && wallCutStart.graph !== doc()) {
+    wallCutStart = null;
+    hover = null;
+    renderContext();
+    scheduleDraw();
+  }
   const target = wallCutPoint(point);
   if (!target) {
     status(wallCutStart ? '始点と同じ壁線上に終点を指定してください。' : '編集できる壁線上に始点を指定してください。', true);
     return;
   }
   if (!wallCutStart) {
-    wallCutStart = target;
+    const walls = doc().objects.filter(item => isWallSegment(item) && canEditItem(item));
+    wallCutStart = { ...target, graph: doc(), run: wallCutRun(walls, target.wall) };
     hover = null;
     renderContext();
     scheduleDraw();
@@ -706,7 +716,7 @@ function cutWallClick(point) {
   }
   let result;
   const changed = commit(graph => {
-    result = cutWall(graph, target.wall.id, wallCutStart.t, target.t);
+    result = cutWall(graph, wallCutStart.run, wallCutStart, target);
     return !result.error;
   });
   if (!changed) {
@@ -720,7 +730,7 @@ function cutWallClick(point) {
     return;
   }
   selection.clear();
-  selection.add(result.id);
+  for (const id of result.ids) selection.add(id);
   selectTool('select', { keepSelection: true });
   status('切り出した壁線を選択しました。Deleteで削除、ドラッグで移動できます。');
 }
