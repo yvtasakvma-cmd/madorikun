@@ -1,4 +1,4 @@
-import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -168,7 +168,8 @@ function partIcon(id, variant) {
   const { layer } = parts[id];
   const [width, height] = partSize(id, variant);
   const arc = ['swing', 'double', 'folding'].includes(id);
-  const viewTop = arc ? -Math.max(id === 'swing' ? width : height, 12) - 5 : -height / 2 - 6;
+  const arcDepth = openingSwingDepth(id, width, height, openingFrameDepth(id, width, 7, variant), variant);
+  const viewTop = arc ? -Math.max(arcDepth, 12) - 5 : -height / 2 - 6;
   const viewBottom = arc ? 8 : height / 2 + 6;
   const drawing = partDrawing(id, width, height, false, layer === 'opening' ? 7 : undefined, undefined, variant);
   return `<svg aria-hidden="true" viewBox="${-width / 2 - 6} ${viewTop} ${width + 12} ${viewBottom - viewTop}">${drawing}</svg>`;

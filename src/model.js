@@ -1,4 +1,5 @@
 import { basinSymbols } from './basin-symbols.js';
+import { foldingSymbols } from './folding-symbols.js';
 import { slidingSymbols } from './sliding-symbols.js';
 import { stoveFrameRadii, stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
@@ -67,6 +68,13 @@ const kitchenPieces = {
 export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSymbols.stove3.name, burner: kitchenPieces.burner.name };
 
 export const PART_DESIGNS = {
+  folding: {
+    default: 'zigzag',
+    choices: {
+      zigzag: 'ジグザグ',
+      ...Object.fromEntries(Object.entries(foldingSymbols).map(([id, symbol]) => [id, symbol.name])),
+    },
+  },
   basin: {
     default: 'rounded',
     choices: Object.fromEntries(Object.entries(basinSymbols).map(([id, symbol]) => [id, symbol.name])),
@@ -98,6 +106,10 @@ export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
+  if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
+    const { frame: [left, , right], stroke } = foldingSymbols[variant];
+    return Number((stroke * parts.folding.size[0] / (right - left)).toFixed(2));
+  }
   if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
     const { bounds: [left, , right], stroke } = slidingSymbols[variant];
     return Number((stroke * parts.sliding.size[0] / (right - left)).toFixed(2));
@@ -115,11 +127,22 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
 }
 
 export function openingFrameDepth(kind, width, depth, variant) {
+  if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
+    const [left, top, right, bottom] = foldingSymbols[variant].frame;
+    return width * (bottom - top) / (right - left);
+  }
   if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
     const [left, top, right, bottom] = slidingSymbols[variant].bounds;
     return Math.min(depth, width * (bottom - top) / (right - left));
   }
   return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;
+}
+
+export function openingSwingDepth(kind, width, height, depth, variant) {
+  if (kind === 'swing') return width;
+  if (kind === 'double') return width / 2;
+  if (kind === 'folding') return height + (Object.hasOwn(foldingSymbols, variant) ? depth / 2 : 0);
+  return 0;
 }
 
 export const parts = {
@@ -219,6 +242,10 @@ export function blank() {
 
 export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   const size = parts[kind].size;
+  if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
+    const { frame: [left, top, right], tipY } = foldingSymbols[variant];
+    return [size[0], size[0] * (top - tipY) / (right - left)];
+  }
   if (kind === 'basin') {
     const [left, top, right, bottom] = basinSymbols[variant].bounds;
     return [size[0], (bottom - top) * size[0] / (right - left)];

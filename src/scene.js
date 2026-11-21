@@ -1,5 +1,6 @@
-import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
+import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
+import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
 import { slidingDrawing, slidingSymbols } from './sliding-symbols.js';
 import { burnerDrawing, stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
@@ -18,6 +19,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
   const stroke = mono ? '#000000' : ink;
   const lineWidth = strokeWidth ?? partStrokeDefault(kind, variant);
   const stove = kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant) ? stoveSymbols[variant] : null;
+  const folding = kind === 'folding' && Object.hasOwn(foldingSymbols, variant) ? foldingSymbols[variant] : null;
   const rect = (a, b, width, height, fill = 'none', radius = 0) =>
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
@@ -35,7 +37,8 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       body = frame + `<path d="M${x} 0V${x} A${-x} ${-x} 0 0 1 0 0M${-x} 0V${x} A${-x} ${-x} 0 0 0 0 0"/>`;
       break;
     case 'folding':
-      body = frame + `<path d="M${x} 0l${w / 5} ${-h} ${w / 5} ${h} ${w / 5} ${-h} ${w / 5} ${h}"/>`;
+      body = folding ? foldingDrawing(folding, w, h, depth)
+        : frame + `<path d="M${x} 0l${w / 5} ${-h} ${w / 5} ${h} ${w / 5} ${-h} ${w / 5} ${h}"/>`;
       break;
     case 'window':
     case 'sliding': {
@@ -125,7 +128,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     }
   }
-  const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin'
+  const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin' || Boolean(folding)
     || (kind === 'kitchen' && variant !== 'counter');
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
     stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;
@@ -242,9 +245,13 @@ export function objectBounds(item) {
     return rotatedBounds(item.at, width, height, item.angle);
   }
   if (item.layer === 'opening' && ['swing', 'double', 'folding'].includes(item.kind)) {
-    const extent = item.kind === 'swing' ? item.w : item.h;
+    const variant = partVariant(item);
+    const depth = openingFrameDepth(item.kind, item.w, 0, variant);
+    const extent = item.kind === 'folding' ? openingSwingDepth(item.kind, item.w, item.h, depth, variant)
+      : item.kind === 'swing' ? item.w : item.h;
     const y = item.flipY ? extent : -extent;
-    return polygonBounds([[-item.w / 2, 0], [item.w / 2, 0], [item.w / 2, y], [-item.w / 2, y]]
+    const otherSide = item.flipY ? -depth / 2 : depth / 2;
+    return polygonBounds([[-item.w / 2, otherSide], [item.w / 2, otherSide], [item.w / 2, y], [-item.w / 2, y]]
       .map(point => add(item.at, rotate(point, item.angle))));
   }
   return rotatedBounds(item.at, item.w, item.h, item.angle);

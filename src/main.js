@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToStove, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -354,9 +354,10 @@ function boundsOf(items) {
 function partRotationBox(item) {
   if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
   const frame = itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10);
-  const halfFrame = openingFrameDepth(item.kind, item.w, frame, partVariant(item)) / 2;
-  const swingDepth = item.kind === 'swing' ? item.w
-    : item.kind === 'double' ? item.w / 2 : item.kind === 'folding' ? item.h : 0;
+  const variant = partVariant(item);
+  const depth = openingFrameDepth(item.kind, item.w, frame, variant);
+  const halfFrame = depth / 2;
+  const swingDepth = openingSwingDepth(item.kind, item.w, item.h, depth, variant);
   const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);
   return { x: -item.w / 2, y, width: item.w, height: halfFrame + Math.max(halfFrame, swingDepth) };
 }
@@ -1597,7 +1598,7 @@ function modifyObject(id, key, value) {
       if (key === 'roomArea') room.count = Number(value.toFixed(2));
       else room.approximate = value;
       target.value = roomLabelText(room.name, room.count, room.approximate);
-    } else if (key === 'variant' && target.layer === 'fixture') {
+    } else if (key === 'variant' && (target.layer === 'fixture' || target.kind === 'folding')) {
       const [previousWidth, previousHeight] = partSize(target.kind, partVariant(target));
       const [newWidth, newHeight] = partSize(target.kind, value);
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
