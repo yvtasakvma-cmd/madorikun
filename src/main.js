@@ -1,7 +1,7 @@
 import './style.css';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
-  projectOnWall, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelArea, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
@@ -254,14 +254,19 @@ function renderEditStatus() {
   $('[data-action="redo"]').disabled = !redoStack.length;
 }
 
-function renderTextEdit() {
-  // Keep the input and the adjacent font select mounted while focus changes.
+function renderTextEdit(updateEditor = false) {
+  // Keep the text controls mounted while focus changes.
   const areaField = inspector.querySelector('[data-room-area]');
   if (areaField) {
     const editor = inspector.querySelector(TEXT_INPUT);
-    const area = roomLabelArea(itemBy(editor.dataset.objectId)?.value ?? '');
-    areaField.hidden = area === null;
-    if (area !== null) areaField.querySelector('input').value = area;
+    const value = itemBy(editor.dataset.objectId)?.value ?? '';
+    const room = readRoomLabel(value);
+    if (updateEditor) editor.value = value;
+    areaField.hidden = !room;
+    if (room) {
+      areaField.querySelector('[data-field="object-roomArea"]').value = room.count;
+      areaField.querySelector('[data-field="object-roomApproximate"]').checked = room.approximate;
+    }
   }
   renderEditStatus();
   scheduleDraw();
@@ -766,11 +771,13 @@ function paletteItemAt(kind, point) {
 function placePaletteItem(kind, point) {
   const item = paletteItemAt(kind, point);
   const name = item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
-  if (item && addItem(item, name + 'を配置しました。')) {
-    tool = 'select';
-    clearDraft();
-    renderAll();
-  }
+  if (item) placeItem(item, name + 'を配置しました。');
+}
+
+function placeItem(item, message) {
+  if (!addItem(item, message)) return false;
+  selectTool('select', { keepSelection: true });
+  return true;
 }
 
 function polygonForClosure(free) {
@@ -846,7 +853,7 @@ function drawingClick(event, point) {
   } else if (tool === 'text') {
     // Suppress the canvas's default mouse focus after focusing the editor.
     event.preventDefault();
-    if (addItem(textAt(point, '部屋名'), '文字を追加しました。')) {
+    if (placeItem(textAt(point, '部屋名'), '文字を追加しました。')) {
       const editor = inspector.querySelector(TEXT_INPUT);
       editor.focus();
       editor.select();
@@ -1525,13 +1532,22 @@ function fieldValue(input) {
 }
 
 function modifyObject(id, key, value) {
+  const changesRoomArea = key === 'roomArea' || key === 'roomApproximate';
+  let refresh = renderAll;
+  if (key === 'value') refresh = renderTextEdit;
+  else if (changesRoomArea) refresh = () => renderTextEdit(true);
   commit(graph => {
     const target = graph.objects.find(item => item.id === id);
     if (key === 'room') Object.assign(target, { room: value, fill: roomColors[value].color ?? target.fill });
     else if (key === 'fill') Object.assign(target, { room: 'custom', fill: value });
     else if (key === 'tatami') target.tatami = Number(value);
-    else if (key === 'roomArea') target.value = roomLabelText(target.value.split('\n')[0], Number(value.toFixed(2)));
-    else if (key === 'variant' && target.layer === 'fixture') {
+    else if (changesRoomArea) {
+      const room = readRoomLabel(target.value);
+      if (!room) return false;
+      if (key === 'roomArea') room.count = Number(value.toFixed(2));
+      else room.approximate = value;
+      target.value = roomLabelText(room.name, room.count, room.approximate);
+    } else if (key === 'variant' && target.layer === 'fixture') {
       const [previousWidth, previousHeight] = partSize(target.kind, target.variant);
       const [newWidth, newHeight] = partSize(target.kind, value);
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
@@ -1544,7 +1560,7 @@ function modifyObject(id, key, value) {
       target.w = value;
       if (wall) positionOpening(target, wall, target.t);
     } else target[key] = value;
-  }, undefined, state.asset, key === 'value' ? renderTextEdit : renderAll);
+  }, undefined, state.asset, refresh);
 }
 
 for (const eventName of ['input', 'focusin', 'focusout', 'select']) {

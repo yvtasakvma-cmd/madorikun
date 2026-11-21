@@ -35,14 +35,16 @@ export const DEFAULT_TEXT_FONT = 'gothic';
 
 export const ROOM_LABELS = { western: '洋室', japanese: '和室', ldk: 'LDK', dk: 'DK', k: 'K' };
 export const ROOM_LABEL_TATAMI = { initial: 6, min: 0.01, max: 999.99 };
-export const roomLabelText = (name, count) => `${name}\n（約${count}帖）`;
+export const roomLabelText = (name, count, approximate = false) => `${name}\n（${approximate ? '約' : ''}${count}帖）`;
 
-export function roomLabelArea(value) {
+export function readRoomLabel(value) {
   const lines = value.split('\n');
-  if (lines.length !== 2 || !Object.values(ROOM_LABELS).includes(lines[0])) return null;
-  const match = /^（約(\d+(?:\.\d{1,2})?)帖）$/.exec(lines[1]);
-  const count = Number(match?.[1]);
-  return count >= ROOM_LABEL_TATAMI.min && count <= ROOM_LABEL_TATAMI.max ? count : null;
+  const [name, area] = lines;
+  if (lines.length !== 2 || !Object.values(ROOM_LABELS).includes(name)) return null;
+  const match = /^（(約?)(\d+(?:\.\d{1,2})?)帖）$/.exec(area);
+  const count = Number(match?.[2]);
+  if (!(count >= ROOM_LABEL_TATAMI.min && count <= ROOM_LABEL_TATAMI.max)) return null;
+  return { name, count, approximate: match[1] === '約' };
 }
 
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };

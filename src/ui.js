@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelArea, roomLabelText, TEXT_FONTS, WASHER_DASH, washerDashDefault } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, TEXT_FONTS, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -221,10 +221,11 @@ export function propertyMarkup(item) {
     + colorField('object-fill', item.fill);
   if (item.layer === 'text') {
     const font = item.font ?? DEFAULT_TEXT_FONT;
-    const area = roomLabelArea(item.value);
+    const room = readRoomLabel(item.value);
     return selectField('書体', 'object-font', font, fontChoices())
-      + `<div data-room-area ${area === null ? 'hidden' : ''}>
-          ${numberField('帖数', 'object-roomArea', area ?? ROOM_LABEL_TATAMI.initial, ROOM_LABEL_TATAMI.min, ROOM_LABEL_TATAMI.max, 0.01)}
+      + `<div data-room-area ${room ? '' : 'hidden'}>
+          ${numberField('帖数', 'object-roomArea', room?.count ?? ROOM_LABEL_TATAMI.initial, ROOM_LABEL_TATAMI.min, ROOM_LABEL_TATAMI.max, 0.01)}
+          ${checkField('約', 'object-roomApproximate', room?.approximate)}
         </div>`
       + `<label class="stack-field">文字<textarea data-field="object-value" data-object-id="${escapeHtml(item.id)}" style="font-family:${TEXT_FONTS[font].family}, sans-serif"
           maxlength="500" rows="3">

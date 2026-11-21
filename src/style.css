@@ -140,6 +140,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #inspector fieldset { margin: 0; padding: 0; border: 0; }
 #inspector .field { justify-content: space-between; }
 #inspector input[type="number"] { width: 79px; }
+[data-room-area]:not([hidden]) { display: flex; align-items: center; gap: 12px; }
 .inspector-placeholder { margin: 0; padding: 10px; border: 1px dashed #e1e9e3; border-radius: 6px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .inspector-name { display: block; overflow-wrap: anywhere; font-weight: 650; font-size: 12px; }
 .property-actions { display: flex; gap: 4px; }
