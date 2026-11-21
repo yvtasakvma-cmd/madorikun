@@ -230,7 +230,7 @@ export function propertyMarkup(item) {
           maxlength="500" rows="3">
 ${escapeHtml(item.value)}</textarea></label>`
       + numberField('サイズ', 'object-size', item.size, 4, 300)
-      + numberField('回転（°）', 'object-angle', item.angle, -360, 360);
+      + checkField('縦書き', 'object-vertical', item.vertical);
   }
   const stroke = PART_STROKE;
   const design = Object.hasOwn(PART_DESIGNS, item.kind) ? PART_DESIGNS[item.kind] : null;

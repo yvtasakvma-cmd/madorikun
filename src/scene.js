@@ -178,10 +178,39 @@ function floorPattern(item, mono, interactive) {
   return hit + `<path d="${path}" fill="none" stroke="${mono ? '#000000' : pattern === 'boards' ? '#8b8b83' : '#67675d'}" stroke-width="${pattern === 'boards' ? 0.8 : 1.25}"/>`;
 }
 
+const textLineSpacing = 1.22;
+const textBaseline = 0.32;
+const textSegmenter = new Intl.Segmenter('ja');
+const verticalRotatedPunctuation = new Set('ー―〜～…‥「」『』【】〔〕〈〉《》（）［］｛｝()[]{}');
+const splitCharacters = text => Array.from(textSegmenter.segment(text), entry => entry.segment);
+
+function verticalTextLayout(value, size) {
+  const columns = value.split('\n').map(splitCharacters);
+  const rows = Math.max(1, ...columns.map(column => column.length));
+  const step = size * textLineSpacing;
+  return {
+    columns, rows, step,
+    xAt: column => ((columns.length - 1) / 2 - column) * step,
+    yAt: row => (row - (rows - 1) / 2) * step,
+  };
+}
+
+export function verticalTextCaret(value, position, size) {
+  const layout = verticalTextLayout(value, size);
+  const preceding = value.slice(0, position).split('\n');
+  const column = preceding.length - 1;
+  const row = splitCharacters(preceding[column]).length;
+  return [layout.xAt(column), layout.yAt(row) - layout.step / 2];
+}
+
 export function objectBounds(item) {
   if (item.points) return polygonBounds(item.points);
   if (item.a) return polygonBounds([item.a, item.b]);
   if (item.layer === 'text') {
+    if (item.vertical) {
+      const { columns, rows, step } = verticalTextLayout(item.value, item.size);
+      return rotatedBounds(item.at, (columns.length - 1) * step + item.size, rows * step, 0);
+    }
     const lines = item.value.split('\n');
     const width = Math.max(...lines.map(line => [...line].length), 1) * item.size;
     const height = lines.length * item.size * 1.25;
@@ -203,10 +232,10 @@ export function rotatedBounds(center, width, height, angle) {
 
 const svgCommands = { moveTo: 'M', lineTo: 'L', quadraticCurveTo: 'Q', bezierCurveTo: 'C', closePath: 'Z' };
 
-function outlineFontLine(font, line, size, baseline) {
+function outlineFontLine(font, line, size, baseline, center) {
   const shaped = font.layout(line);
   const scale = size / font.unitsPerEm;
-  let x = -shaped.advanceWidth * scale / 2;
+  let x = center - shaped.advanceWidth * scale / 2;
   let y = baseline;
   let path = '';
   for (let i = 0; i < shaped.glyphs.length; i++) {
@@ -228,15 +257,25 @@ function textDrawing(item, color, halo, fonts) {
   const id = item.font ?? DEFAULT_TEXT_FONT;
   const font = fonts?.get(id);
   const family = TEXT_FONTS[id].family;
-  const lines = item.value.split('\n');
-  const glyphs = lines.map((line, i) => {
-    const y = (i - (lines.length - 1) / 2) * item.size * 1.22 + item.size * 0.32;
-    if (font) {
-      return `<path d="${outlineFontLine(font, line, item.size, y)}"/>`;
-    }
-    return `<text x="0" y="${y}" font-size="${item.size}" font-family="${family}, sans-serif" text-anchor="middle" xml:space="preserve">${escapeHtml(line)}</text>`;
-  }).join('');
-  return `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle})">
+  const run = (text, x, y, rotateGlyph = false) => {
+    const transform = rotateGlyph ? ` transform="rotate(90 ${x} ${y - item.size * textBaseline})"` : '';
+    if (font) return `<path d="${outlineFontLine(font, text, item.size, y, x)}"${transform}/>`;
+    return `<text x="${x}" y="${y}" font-size="${item.size}" font-family="${family}, sans-serif" text-anchor="middle" xml:space="preserve"${transform}>${escapeHtml(text)}</text>`;
+  };
+  let glyphs;
+  if (item.vertical) {
+    const { columns, xAt, yAt } = verticalTextLayout(item.value, item.size);
+    glyphs = columns.flatMap((column, index) => {
+      const x = xAt(index);
+      return column.map((character, row) =>
+        run(character, x, yAt(row) + item.size * textBaseline, verticalRotatedPunctuation.has(character)));
+    }).join('');
+  } else {
+    const lines = item.value.split('\n');
+    glyphs = lines.map((line, i) =>
+      run(line, 0, (i - (lines.length - 1) / 2) * item.size * textLineSpacing + item.size * textBaseline)).join('');
+  }
+  return `<g transform="translate(${item.at.join(' ')}) rotate(${item.vertical ? 0 : item.angle})">
     <g fill="${halo}" stroke="${halo}" stroke-linejoin="round" stroke-width="4">${glyphs}</g>
     <g class="text-glyphs" fill="${color}">${glyphs}</g>
   </g>`;

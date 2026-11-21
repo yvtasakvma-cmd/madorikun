@@ -4,7 +4,7 @@ import {
   projectOnWall, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelArea, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
-  escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, wallDrawingGeometry,
+  escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
 } from './scene.js';
 import {
   detectImageFormat, download, exportSetup, makeExport, readProject, renderUnderlay, saveProject, UNDERLAY_LIMIT,
@@ -480,8 +480,7 @@ function marqueeMarkup({ bounds }) {
     stroke-dasharray="${4 / view.scale} ${3 / view.scale}" pointer-events="none"/>`;
 }
 
-function textCaretMarkup(item, editor) {
-  const position = editor.selectionDirection === 'backward' ? editor.selectionStart : editor.selectionEnd;
+function horizontalTextCaretBar(item, editor, position, length) {
   const preceding = editor.value.slice(0, position).split('\n');
   const column = preceding.at(-1).length;
   const lines = sceneNodes.get(item.id)?.node.querySelector('.text-glyphs')?.children;
@@ -491,9 +490,19 @@ function textCaretMarkup(item, editor) {
   const x = column < count ? line.getStartPositionOfChar(column).x
     : count ? line.getEndPositionOfChar(count - 1).x : 0;
   const baseline = line.y.baseVal.getItem(0).value;
-  const height = Math.max(item.size, 11 / view.scale);
-  const bar = `M${x} ${baseline - item.size * 0.28 - height / 2}v${height}`;
-  return `<g class="text-edit-caret" transform="translate(${item.at.join(' ')}) rotate(${item.angle})"
+  return `M${x} ${baseline - item.size * 0.28 - length / 2}v${length}`;
+}
+
+function textCaretMarkup(item, editor) {
+  const position = editor.selectionDirection === 'backward' ? editor.selectionStart : editor.selectionEnd;
+  const length = Math.max(item.size, 11 / view.scale);
+  let bar;
+  if (item.vertical) {
+    const [x, y] = verticalTextCaret(editor.value, position, item.size);
+    bar = `M${x - length / 2} ${y}h${length}`;
+  } else bar = horizontalTextCaretBar(item, editor, position, length);
+  if (!bar) return '';
+  return `<g class="text-edit-caret" transform="translate(${item.at.join(' ')}) rotate(${item.vertical ? 0 : item.angle})"
     aria-hidden="true" pointer-events="none" fill="none">
     <path d="${bar}" stroke="#ffffff" stroke-width="4" vector-effect="non-scaling-stroke"/>
     <path d="${bar}" stroke="#08786a" stroke-width="2" vector-effect="non-scaling-stroke"/>

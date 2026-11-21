@@ -60,6 +60,7 @@ function validateProject(doc, underlay, assetPath) {
         && number(item.spacing, 3, 150));
     } else if (item.layer === 'text') {
       ensure(point(item.at) && string(item.value, 500) && number(item.size, 4, 300) && number(item.angle));
+      if (item.vertical !== undefined) ensure(flag(item.vertical));
       if (item.font !== undefined) ensure(string(item.font, 20) && Object.hasOwn(TEXT_FONTS, item.font), '文字の書体に対応していません。');
     } else {
       ensure(Object.hasOwn(parts, item.kind) && parts[item.kind].layer === item.layer && point(item.at)
