@@ -1553,6 +1553,7 @@ function modifyObject(id, key, value) {
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
       target.h = clamp(target.h * newHeight / previousHeight, 1, 50000);
       target.variant = value;
+      if (target.kind === 'kitchen' && value !== 'sink') delete target.cornerRadius;
     } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);
       if (wall) value = Math.min(value, lengthOf(wall.a, wall.b));

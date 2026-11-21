@@ -57,6 +57,12 @@ export function readRoomLabel(value) {
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 export const WASHER_DASH = { min: 0.01, max: 2500 };
 export const washerDashDefault = (w, h) => Math.min(w, h) * 0.043;
+const kitchenPieces = {
+  worktop: { name: '台', size: [116, 116 * 166 / 522] },
+  sink: { name: 'シンク', size: [44, 44 * 300 / 442] },
+  divider: { name: '仕切り線', size: [8, 116 * 166 / 522] },
+  burner: { name: 'コンロ口', size: [16.25, 16.25] },
+};
 
 export const PART_DESIGNS = {
   basin: {
@@ -69,7 +75,10 @@ export const PART_DESIGNS = {
   },
   kitchen: {
     default: 'counter',
-    choices: { counter: 'キッチン', ...Object.fromEntries(Object.entries(stoveSymbols).map(([id, symbol]) => [id, symbol.name])) },
+    choices: {
+      counter: 'キッチン',
+      ...Object.fromEntries(Object.entries({ ...stoveSymbols, ...kitchenPieces }).map(([id, symbol]) => [id, symbol.name])),
+    },
   },
   sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
 };
@@ -87,7 +96,7 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
     const { bounds: [left, , right], stroke } = basinSymbols[variant];
     return Number((stroke * parts.basin.size[0] / (right - left)).toFixed(2));
   }
-  if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) return stoveStrokeWidth;
+  if (kind === 'kitchen' && (variant === 'burner' || Object.hasOwn(stoveSymbols, variant))) return stoveStrokeWidth;
   if (kind !== 'toilet') return PART_STROKE.defaultWidth;
   const { bounds: [, top, , bottom], lineWidth } = toiletSymbols[variant];
   return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
@@ -114,6 +123,7 @@ export const parts = {
 
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 export const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+export const sinkRadius = (w, h, radius) => Math.min(radius ?? Math.min(w, h) * 0.38, Math.min(w, h) / 2);
 export const lerp = (a, b, t) => a.map((value, i) => value + (b[i] - value) * t);
 export const lengthOf = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 export const angleOf = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
@@ -200,6 +210,7 @@ export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) {
     return stoveSymbols[variant].size.map(dimension => dimension * stoveScale);
   }
+  if (kind === 'kitchen' && Object.hasOwn(kitchenPieces, variant)) return kitchenPieces[variant].size;
   if (kind !== 'toilet') return size;
   const [left, top, right, bottom] = toiletSymbols[variant].bounds;
   return [(right - left) * size[1] / (bottom - top), size[1]];

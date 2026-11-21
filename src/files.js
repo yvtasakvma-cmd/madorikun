@@ -83,6 +83,9 @@ function validateProject(doc, underlay, assetPath) {
       if (item.strokeWidth !== undefined) {
         ensure(number(item.strokeWidth, PART_STROKE.min, PART_STROKE.max));
       }
+      if (item.cornerRadius !== undefined) {
+        ensure(item.kind === 'kitchen' && item.variant === 'sink' && number(item.cornerRadius, 0, 25000));
+      }
       for (const value of [item.dashLength, item.dashGap]) {
         if (value !== undefined) ensure(item.kind === 'washer' && number(value, WASHER_DASH.min, WASHER_DASH.max));
       }

@@ -1,6 +1,6 @@
-import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
+import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
-import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
+import { burnerDrawing, stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
 
@@ -11,7 +11,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap } = {}) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius } = {}) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -73,6 +73,22 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         body = stoveDrawing(stove, w, h);
         break;
       }
+      if (variant === 'worktop') {
+        body = rect(x, y, w, h);
+        break;
+      }
+      if (variant === 'sink') {
+        body = rect(x, y, w, h, 'none', sinkRadius(w, h, cornerRadius));
+        break;
+      }
+      if (variant === 'divider') {
+        body = line(0, y, 0, -y);
+        break;
+      }
+      if (variant === 'burner') {
+        body = burnerDrawing(0, 0, w / 90, h / 90);
+        break;
+      }
       const ring = Math.min(w * 0.043, h * 0.13);
       body = rect(x, y, w, h)
         + rect(w * -0.43, h * -0.35, w * 0.37, h * 0.7, 'none', Math.min(w, h) * 0.09)
@@ -106,7 +122,8 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     }
   }
-  const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin' || Boolean(stove);
+  const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin'
+    || (kind === 'kitchen' && variant !== 'counter');
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
     stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;
 }
@@ -356,10 +373,16 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         drawing = textDrawing(item, color, halo, fonts);
       } else {
         const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
-        const hit = entries && item.layer === 'fixture'
-          ? `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" fill="transparent"/>` : '';
+        const variant = partVariant(item);
+        let hit = '';
+        if (entries && item.layer === 'fixture') {
+          const hitStyle = item.kind === 'kitchen' && variant === 'worktop'
+            ? 'fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke"'
+            : 'fill="transparent"';
+          hit = `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" ${hitStyle}/>`;
+        }
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, partVariant(item), item)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, variant, item)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };

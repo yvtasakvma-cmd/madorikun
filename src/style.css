@@ -84,7 +84,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .part-palette .part-design-trigger { width: 20px; display: grid; grid-template-rows: auto; border-left: 0; border-radius: 0 6px 6px 0; cursor: pointer; }
 .part-palette .part-design-trigger svg { width: 12px; height: 12px; }
 .part-designs { position: fixed; inset: auto; margin: 0; padding: 7px; border: 1px solid #d9e4dd; border-radius: 9px; background: #fff; color: #273a30; box-shadow: 0 8px 24px #14362924; }
-.part-designs:popover-open { display: flex; gap: 5px; }
+.part-designs:popover-open { display: flex; flex-wrap: wrap; max-width: calc(100vw - 16px); gap: 5px; }
 .part-designs button { display: grid; place-items: center; gap: 4px; min-width: 70px; padding: 6px 4px; font-size: 11px; color: inherit; cursor: pointer; background: #f9fbfa; border: 1px solid #e2e8e4; border-radius: 6px; }
 .part-designs button:hover, .part-designs button[aria-pressed="true"] { background: var(--light-green); border-color: #a6c7b9; }
 .part-designs svg { width: 32px; height: 39px; pointer-events: none; }
