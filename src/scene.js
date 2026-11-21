@@ -13,7 +13,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius, foldingTriangles } = {}) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius, foldingTriangles, steppedDepth } = {}) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -24,7 +24,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
   const circle = (cx, cy, r, fill = 'none') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`;
-  const depth = openingFrameDepth(kind, w, frameDepth, variant);
+  const depth = openingFrameDepth(kind, w, frameDepth, variant, steppedDepth);
   const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
   switch (kind) {
@@ -254,7 +254,7 @@ export function objectBounds(item) {
     return polygonBounds([[-item.w / 2, otherSide], [item.w / 2, otherSide], [item.w / 2, y], [-item.w / 2, y]]
       .map(point => add(item.at, rotate(point, item.angle))));
   }
-  return rotatedBounds(item.at, item.w, item.h, item.angle);
+  return rotatedBounds(item.at, item.w, item.steppedDepth ?? item.h, item.angle);
 }
 
 export function rotatedBounds(center, width, height, angle) {

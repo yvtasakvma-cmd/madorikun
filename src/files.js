@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
+import { floors, isSteppedSliding, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import { foldingSymbols, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
@@ -83,6 +83,9 @@ function validateProject(doc, underlay, assetPath) {
       }
       if (item.strokeWidth !== undefined) {
         ensure(number(item.strokeWidth, PART_STROKE.min, PART_STROKE.max));
+      }
+      if (item.steppedDepth !== undefined) {
+        ensure(isSteppedSliding(item.kind, item.variant) && number(item.steppedDepth, 1, 50000));
       }
       if (item.cornerRadius !== undefined) {
         ensure(item.kind === 'kitchen' && item.variant === 'sink' && number(item.cornerRadius, 0, 25000));

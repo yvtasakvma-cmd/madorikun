@@ -1,7 +1,7 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToStove, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -356,7 +356,7 @@ function partRotationBox(item) {
   if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
   const frame = itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10);
   const variant = partVariant(item);
-  const depth = openingFrameDepth(item.kind, item.w, frame, variant);
+  const depth = openingFrameDepth(item.kind, item.w, frame, variant, item.steppedDepth);
   const halfFrame = depth / 2;
   const swingDepth = openingSwingDepth(item.kind, item.w, item.h, depth, variant);
   const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);
@@ -415,6 +415,13 @@ function handlesMarkup(items) {
     draw += item.layer === 'opening'
       ? handle(left, 'part-left') + handle(right, 'part-right')
       : outline.map((point, i) => handle(point, 'fixture-' + HANDLES[i])).join('');
+    if (isSteppedSliding(item.kind, partVariant(item))) {
+      for (const side of [-1, 1]) {
+        const y = side * box.height / 2;
+        const grip = worldPoint([0, y + side * 10 / view.scale]);
+        draw += edge(worldPoint([0, y]), grip) + handle(grip, side < 0 ? 'depth-top' : 'depth-bottom');
+      }
+    }
     if (item.kind === 'folding') {
       const y = item.flipY ? box.y + box.height : box.y;
       const flip = item.flipX ? -1 : 1;
@@ -1124,6 +1131,7 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
         const hScale = Math.hypot(sx * Math.sin(radians), sy * Math.cos(radians));
         item.w = clamp(item.w * wScale, 4, 50000);
         item.h = clamp(item.h * hScale, 1, 50000);
+        if (item.steppedDepth !== undefined) item.steppedDepth = clamp(item.steppedDepth * hScale, 1, 50000);
         if (item.wallId && !walls.has(item.wallId)) snapPart(item, item.at, graph);
       }
     }
@@ -1177,6 +1185,10 @@ function handleDrag(graph, current, point, proportional) {
     syncOpenings(graph, item.id);
   } else if (handle === 'rotate-part') {
     current.rotationChanged = rotatePart(item, current.start, point, proportional);
+  } else if (handle === 'depth-top' || handle === 'depth-bottom') {
+    const side = handle === 'depth-top' ? -1 : 1;
+    const [, movement] = rotate(sub(point, current.start), -item.angle);
+    item.steppedDepth = clamp(partRotationBox(item).height + 2 * side * movement, 1, 50000);
   } else if (handle.startsWith('fold-triangle-')) {
     const index = Number(handle.slice('fold-triangle-'.length));
     const triangles = foldingTriangleLayout(partVariant(item), item.foldingTriangles);
@@ -1633,6 +1645,9 @@ function modifyObject(id, key, value) {
       target.variant = value;
       if (target.kind === 'folding') delete target.foldingTriangles;
       if (target.kind === 'kitchen' && value !== 'sink') delete target.cornerRadius;
+    } else if (key === 'variant' && target.kind === 'sliding') {
+      target.variant = value;
+      if (!isSteppedSliding(target.kind, value)) delete target.steppedDepth;
     } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);
       if (wall) value = Math.min(value, lengthOf(wall.a, wall.b));

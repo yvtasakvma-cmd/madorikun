@@ -104,6 +104,7 @@ const legacyPartVariants = { toilet: 'tank', folding: 'zigzag' };
 export const partVariant = item => item.variant ?? (legacyPartVariants[item.kind] ?? PART_DESIGNS[item.kind]?.default);
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
+export const isSteppedSliding = (kind, variant) => kind === 'sliding' && variant === 'stepped';
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
@@ -127,7 +128,8 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
 }
 
-export function openingFrameDepth(kind, width, depth, variant) {
+export function openingFrameDepth(kind, width, depth, variant, steppedDepth) {
+  if (isSteppedSliding(kind, variant) && steppedDepth !== undefined) return steppedDepth;
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const [left, top, right, bottom] = foldingSymbols[variant].frame;
     return width * (bottom - top) / (right - left);

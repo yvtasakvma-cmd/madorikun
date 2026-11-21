@@ -1,4 +1,4 @@
-import { floors, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, isSteppedSliding, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 import { foldingTriangleLayout, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 
@@ -262,6 +262,7 @@ ${escapeHtml(item.value)}</textarea></label>`
   const hiddenDesign = kitchen ? 'counter' : folding ? 'zigzag' : null;
   const designs = design ? Object.entries(design.choices).filter(([id]) => id !== hiddenDesign || variant === hiddenDesign) : null;
   return (designs ? selectField('デザイン', 'object-variant', variant, designs) : '')
+    + (isSteppedSliding(item.kind, variant) ? '<span class="inspector-hint">枠の上下のハンドルをドラッグして奥行きを調整</span>' : '')
     + (triangleCount ? numberField('三角の数', 'object-triangleCount', triangleCount, 1, MAX_FOLDING_TRIANGLES)
       + '<span class="inspector-hint">三角の頂点をドラッグして移動</span>' : '')
     + (divider ? '' : numberField('幅', 'object-w', item.w, 4, 50000))

@@ -100,6 +100,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #stage.is-panning:active, #stage.is-panning:active * { cursor: grabbing !important; }
 #stage .drag-handle { cursor: crosshair; pointer-events: all; }
 #stage [data-handle^="fold-triangle-"] { cursor: move; }
+#stage [data-handle^="depth-"] { cursor: ns-resize; }
 #stage.temporary-selection, #stage.temporary-selection * { cursor: default; }
 #stage.part-placement-cursor, #stage.part-placement-cursor * { cursor: none; }
 #stage :is(.resize-edge, .move-group-handle) { pointer-events: none; }
