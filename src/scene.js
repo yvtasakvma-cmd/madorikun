@@ -419,6 +419,9 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
             ? 'fill="none" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke"'
             : 'fill="transparent"';
           hit = `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" ${hitStyle}/>`;
+        } else if (entries && isAccordionSliding(item.kind, variant)) {
+          const depth = openingFrameDepth(item.kind, item.w, frame, variant);
+          hit = `<rect x="${-item.w / 2}" y="${-depth / 2}" width="${item.w}" height="${depth}" fill="transparent"/>`;
         }
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
           ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, variant, item, wallWidth)}

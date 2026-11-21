@@ -1,4 +1,4 @@
-import { floors, hasAdjustableRadius, isDividerPart, isSteppedSliding, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partCornerRadius, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isSteppedSliding, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partCornerRadius, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 import { foldingTriangleLayout, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 
@@ -279,6 +279,7 @@ ${escapeHtml(item.value)}</textarea></label>`
     + (triangleCount ? numberField('三角の数', 'object-triangleCount', triangleCount, 1, MAX_FOLDING_TRIANGLES)
       + '<span class="inspector-hint">三角の頂点をドラッグして移動</span>' : '')
     + (divider ? '' : numberField('幅', 'object-w', item.w, 4, 50000))
+    + (isAccordionSliding(item.kind, variant) ? '<span class="inspector-hint">両端の丸いハンドルをドラッグして幅を調整</span>' : '')
     + (item.layer === 'fixture' ? numberField(divider ? '長さ' : kitchen ? '奥行き' : '高さ', 'object-h', item.h, 1, 50000) : '')
     + (hasAdjustableRadius(item.kind, variant)
       ? numberField('角の丸み（R）', 'object-cornerRadius', partCornerRadius(item.kind, item.w, item.h, item.cornerRadius), 0, Math.min(item.w, item.h) / 2, 0.1) : '')

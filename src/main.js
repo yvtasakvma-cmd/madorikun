@@ -1,7 +1,7 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -374,7 +374,8 @@ function handlesMarkup(items) {
   const stroke = 1.25 / view.scale;
   const edge = (a, b, c = 'none') =>
     `<path pointer-events="none" d="M${a[0]} ${a[1]}L${b[0]} ${b[1]}" stroke-dasharray="${c}"/>`;
-  const handle = (point, id) => `<circle class="drag-handle" data-handle="${id}" cx="${point[0]}" cy="${point[1]}" r="${radius}" fill="#ffffff"/>`;
+  const handle = (point, id, cursor) => `<circle class="drag-handle" data-handle="${id}" cx="${point[0]}" cy="${point[1]}" r="${radius}" fill="#ffffff"
+    ${cursor ? `style="cursor:${cursor}"` : ''}/>`;
   const selectionEdges = box => {
     const points = corners(box);
     return points.map((point, i) => {
@@ -404,21 +405,26 @@ function handlesMarkup(items) {
   } else if (items.length === 1 && Object.hasOwn(activeParts, items[0].layer)) {
     const item = items[0];
     const worldPoint = point => add(item.at, rotate(point, item.angle));
-    const left = worldPoint([-item.w / 2, 0]);
-    const right = worldPoint([item.w / 2, 0]);
     const box = partRotationBox(item);
+    const accordion = isAccordionSliding(item.kind, partVariant(item));
+    const gripY = accordion ? (item.flipY ? box.y : box.y + box.height) : 0;
+    const left = worldPoint([-item.w / 2, gripY]);
+    const right = worldPoint([item.w / 2, gripY]);
+    const widthCursor = accordion
+      ? ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][(Math.round(item.angle / 45) % 4 + 4) % 4] : undefined;
+    const rotationOffset = (accordion ? 10 : 6) / view.scale;
     const local = corners(box);
     const outline = local.map(worldPoint);
     const rotationHandles = local.map(([x, y], i) => {
       const [sx, sy] = DIRECTIONS[HANDLES[i]];
-      const [cx, cy] = worldPoint([x + sx * 6 / view.scale, y + sy * 6 / view.scale]);
+      const [cx, cy] = worldPoint([x + sx * rotationOffset, y + sy * rotationOffset]);
       return `<circle class="part-rotation-handle" data-handle="rotate-part"
         cx="${cx}" cy="${cy}" r="${9 / view.scale}"/>`;
     }).join('');
     draw = outline.map((point, i) => edge(point, outline[(i + 1) % 4], `${4 / view.scale} ${3 / view.scale}`)).join('')
       + rotationHandles;
     draw += item.layer === 'opening'
-      ? handle(left, 'part-left') + handle(right, 'part-right')
+      ? handle(left, 'part-left', widthCursor) + handle(right, 'part-right', widthCursor)
       : outline.map((point, i) => handle(point, 'fixture-' + HANDLES[i])).join('');
     if (isSteppedSliding(item.kind, partVariant(item))) {
       for (const side of [-1, 1]) {
