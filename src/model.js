@@ -30,6 +30,11 @@ export const TEXT_FONTS = {
   gothic: { name: 'ゴシック（Noto Sans JP）', family: 'MadoriGothic' },
   mincho: { name: '明朝（Noto Serif JP）', family: 'MadoriMincho' },
   maru: { name: '丸ゴシック（Zen Maru Gothic）', family: 'MadoriMaru' },
+  biz: { name: 'BIZ UDPゴシック', family: 'MadoriBiz' },
+  mplus: { name: 'M PLUS 1p', family: 'MadoriMPlus' },
+  zenKaku: { name: 'Zen Kaku Gothic New', family: 'MadoriZenKaku' },
+  kiwi: { name: 'Kiwi Maru', family: 'MadoriKiwi' },
+  shippori: { name: 'しっぽり明朝', family: 'MadoriShippori' },
 };
 export const DEFAULT_TEXT_FONT = 'gothic';
 

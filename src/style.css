@@ -1,6 +1,11 @@
 @font-face { font-family: MadoriGothic; src: url('../assets/NotoSansJP-Regular.ttf') format('truetype'); font-display: swap; }
 @font-face { font-family: MadoriMincho; src: url('../assets/NotoSerifJP-Regular.ttf') format('truetype'); font-display: swap; }
 @font-face { font-family: MadoriMaru; src: url('../assets/ZenMaruGothic-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriBiz; src: url('../assets/BIZUDPGothic-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriMPlus; src: url('../assets/MPLUS1p-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriZenKaku; src: url('../assets/ZenKakuGothicNew-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriKiwi; src: url('../assets/KiwiMaru-Regular.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: MadoriShippori; src: url('../assets/ShipporiMincho-Regular.ttf') format('truetype'); font-display: swap; }
 
 :root {
   font-family: "Inter", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", sans-serif;

@@ -5,8 +5,16 @@ import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
 import maruUrl from '../assets/ZenMaruGothic-Regular.ttf?url';
+import bizUrl from '../assets/BIZUDPGothic-Regular.ttf?url';
+import mplusUrl from '../assets/MPLUS1p-Regular.ttf?url';
+import zenKakuUrl from '../assets/ZenKakuGothicNew-Regular.ttf?url';
+import kiwiUrl from '../assets/KiwiMaru-Regular.ttf?url';
+import shipporiUrl from '../assets/ShipporiMincho-Regular.ttf?url';
 
-const fontUrls = { gothic: gothicUrl, mincho: minchoUrl, maru: maruUrl };
+const fontUrls = {
+  gothic: gothicUrl, mincho: minchoUrl, maru: maruUrl,
+  biz: bizUrl, mplus: mplusUrl, zenKaku: zenKakuUrl, kiwi: kiwiUrl, shippori: shipporiUrl,
+};
 
 const MB = 1024 * 1024;
 export const UNDERLAY_LIMIT = 50 * MB;
