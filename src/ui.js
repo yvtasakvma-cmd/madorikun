@@ -1,4 +1,4 @@
-import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -235,11 +235,12 @@ ${escapeHtml(item.value)}</textarea></label>`
   }
   const stroke = PART_STROKE;
   const design = Object.hasOwn(PART_DESIGNS, item.kind) ? PART_DESIGNS[item.kind] : null;
+  const variant = partVariant(item);
   const dash = item.kind === 'washer' ? washerDashDefault(item.w, item.h) : null;
-  return (design ? selectField('デザイン', 'object-variant', item.variant ?? design.default, Object.entries(design.choices)) : '')
+  return (design ? selectField('デザイン', 'object-variant', variant, Object.entries(design.choices)) : '')
     + numberField('幅', 'object-w', item.w, 4, 50000)
     + (item.layer === 'fixture' ? numberField('高さ', 'object-h', item.h, 1, 50000) : '')
-    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind, item.variant), stroke.min, stroke.max, 0.01)
+    + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind, variant), stroke.min, stroke.max, 0.01)
     + (dash === null ? ''
       : numberField('破線の長さ', 'object-dashLength', item.dashLength ?? dash, WASHER_DASH.min, WASHER_DASH.max, 0.01)
         + numberField('破線の間隔', 'object-dashGap', item.dashGap ?? dash, WASHER_DASH.min, WASHER_DASH.max, 0.01))

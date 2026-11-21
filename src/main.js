@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -1548,7 +1548,7 @@ function modifyObject(id, key, value) {
       else room.approximate = value;
       target.value = roomLabelText(room.name, room.count, room.approximate);
     } else if (key === 'variant' && target.layer === 'fixture') {
-      const [previousWidth, previousHeight] = partSize(target.kind, target.variant);
+      const [previousWidth, previousHeight] = partSize(target.kind, partVariant(target));
       const [newWidth, newHeight] = partSize(target.kind, value);
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
       target.h = clamp(target.h * newHeight / previousHeight, 1, 50000);

@@ -1,4 +1,4 @@
-import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
+import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
@@ -359,7 +359,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         const hit = entries && item.layer === 'fixture'
           ? `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" fill="transparent"/>` : '';
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, item.variant, item)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, partVariant(item), item)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };

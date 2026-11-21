@@ -64,7 +64,7 @@ export const PART_DESIGNS = {
     choices: Object.fromEntries(Object.entries(basinSymbols).map(([id, symbol]) => [id, symbol.name])),
   },
   toilet: {
-    default: 'tank',
+    default: 'roundedTank',
     choices: Object.fromEntries(Object.entries(toiletSymbols).map(([id, symbol]) => [id, symbol.name])),
   },
   kitchen: {
@@ -73,6 +73,9 @@ export const PART_DESIGNS = {
   },
   sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
 };
+
+// Projects saved before toilet variants used the side-mounted tank by default.
+export const partVariant = item => item.variant ?? (item.kind === 'toilet' ? 'tank' : PART_DESIGNS[item.kind]?.default);
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
@@ -221,7 +224,7 @@ export function projectOnWall(point, wall) {
 
 export function snapFixtureToWall(part, walls, radius) {
   const { at, w, h, angle } = part;
-  const stroke = part.strokeWidth ?? partStrokeDefault(part.kind, part.variant);
+  const stroke = part.strokeWidth ?? partStrokeDefault(part.kind, partVariant(part));
   const halfAxes = [rotate([(w + stroke) / 2, 0], angle), rotate([0, (h + stroke) / 2], angle)];
   const dot = ([x, y], [u, v]) => x * u + y * v;
   let best = radius;
