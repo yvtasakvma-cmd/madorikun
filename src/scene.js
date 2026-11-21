@@ -1,4 +1,4 @@
-import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
+import { add, BATH_BOWL_BOUNDS, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
 import { slidingDrawing, slidingSymbol } from './sliding-symbols.js';
@@ -12,6 +12,24 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
+
+function bathWithBowl(width, height) {
+  const [left, top, right, bottom] = BATH_BOWL_BOUNDS;
+  const sx = width / (right - left);
+  const sy = height / (bottom - top);
+  const x = value => (value - left) * sx - width / 2;
+  const y = value => (value - top) * sy - height / 2;
+  const pt = (px, py) => `${x(px)} ${y(py)}`;
+  return `<path d="M${pt(51, 45)}V${y(77)}
+    C${pt(51, 110.5)} ${pt(78.3, 137.5)} ${pt(112, 137.5)}
+    C${pt(145.7, 137.5)} ${pt(173, 110.5)} ${pt(173, 77)}V${y(45)}"/>
+    <ellipse cx="${x(112.5)}" cy="${y(91)}" rx="${43 * sx}" ry="${35.8 * sy}"/>
+    <path d="M${pt(173, 70.8)}Q${pt(176.5, 70)} ${pt(184, 70)}H${x(220.5)}
+      C${pt(245.6, 70)} ${pt(266, 90.1)} ${pt(266, 115.5)}V${y(268)}
+      C${pt(266, 293)} ${pt(245.7, 313.3)} ${pt(220.6, 313.3)}H${x(184)}
+      C${pt(159, 313.3)} ${pt(138.8, 293)} ${pt(138.8, 268)}V${y(131.5)}"/>
+    <path d="M${pt(114.8, 137.5)}V${y(330)}"/>`;
+}
 
 export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius, foldingTriangles, steppedDepth } = {}) {
   const x = -w / 2;
@@ -65,7 +83,8 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     }
     case 'bath':
-      body = rect(x, y, w, h, 'none', Math.min(w, h) * 0.06)
+      body = variant === 'withBowl' ? bathWithBowl(w, h)
+        : rect(x, y, w, h, 'none', Math.min(w, h) * 0.06)
         + rect(x + w * 0.12, y + h * 0.09, w * 0.76, h * 0.82, 'none', Math.min(w, h) * 0.19)
         + circle(0, h * 0.32, w * 0.025);
       break;
@@ -130,6 +149,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     }
   }
   const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin' || Boolean(folding)
+    || (kind === 'bath' && variant === 'withBowl')
     || (kind === 'kitchen' && variant !== 'counter');
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
     stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;

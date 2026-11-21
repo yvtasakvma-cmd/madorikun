@@ -57,6 +57,7 @@ export function readRoomLabel(value) {
 }
 
 export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
+export const BATH_BOWL_BOUNDS = [51, 45, 266, 330];
 export const WASHER_DASH = { min: 0.01, max: 2500 };
 export const washerDashDefault = (w, h) => Math.min(w, h) * 0.043;
 const kitchenPieces = {
@@ -68,6 +69,7 @@ const kitchenPieces = {
 export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSymbols.stove3.name, burner: kitchenPieces.burner.name };
 
 export const PART_DESIGNS = {
+  bath: { default: 'tub', choices: { tub: '浴槽', withBowl: '浴室（ボウル付き）' } },
   window: {
     default: 'overlap',
     choices: {
@@ -115,6 +117,7 @@ export const isSteppedSliding = (kind, variant) => kind === 'sliding' && variant
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
+  if (kind === 'bath' && variant === 'withBowl') return 1.57;
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const { frame: [left, , right], stroke } = foldingSymbols[variant];
     return Number((stroke * parts.folding.size[0] / (right - left)).toFixed(2));
@@ -254,6 +257,10 @@ export function blank() {
 
 export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   const size = parts[kind].size;
+  if (kind === 'bath' && variant === 'withBowl') {
+    const [left, top, right, bottom] = BATH_BOWL_BOUNDS;
+    return [(right - left) * size[1] / (bottom - top), size[1]];
+  }
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const { frame: [left, top, right], tipY } = foldingSymbols[variant];
     return [size[0], size[0] * (top - tipY) / (right - left)];
