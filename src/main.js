@@ -1,7 +1,7 @@
 import './style.css';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
-  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToStove, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
@@ -41,7 +41,10 @@ let activeParts = { opening: 'swing', fixture: 'bath' };
 let columnPlacement = false;
 let activeRoomLabel = '';
 const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, design]) => [kind, design.default]));
+partDesigns.kitchen = 'worktop';
+partDesigns.stove = 'stove2';
 let pending = [];
+let dividerStartStove;
 let wallChain = null;
 let temporarySelection = false;
 let hover = null;
@@ -76,7 +79,7 @@ const selectedObjects = () => doc().objects.filter(item => selection.has(item.id
 const editable = id => layer(id)?.visible && !layer(id).locked;
 const placementKind = () => tool === 'wall' ? (columnPlacement ? 'column' : '')
   : tool === 'text' ? activeRoomLabel : activeParts[tool];
-const isDividerPart = kind => kind === 'kitchen' && partDesigns.kitchen === 'divider';
+const isDividerPart = (kind, variant = partDesigns[kind]) => kind === 'kitchen' && variant === 'divider';
 const drawingDivider = () => tool === 'fixture' && isDividerPart(activeParts.fixture);
 
 function status(message, error = false) {
@@ -141,6 +144,7 @@ function reset(newDoc, asset) {
 
 function clearDraft() {
   pending = [];
+  dividerStartStove = undefined;
   wallChain = null;
   hover = null;
   draftPart = null;
@@ -169,7 +173,7 @@ function fieldInstructions(title) {
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
-    fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · Shiftで自由な角度` : '',
+    fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · コンロの枠に吸着 · Shiftで自由な角度` : '',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
   return label ? `<span class="context-hint">${label}</span>` : '';
@@ -435,10 +439,11 @@ function snapMarker([x, y], className) {
 
 function draftMarkup(wall) {
   let markup = '';
+  const divider = drawingDivider() && hover && !temporarySelection ? dividerPoint(hover.point, hover.free) : null;
   if (pending.length && !temporarySelection) {
     const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
     const vertices = closing ?? (wall ? [wall.start] : pending);
-    const points = hover ? [...vertices, wall?.end ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
+    const points = hover ? [...vertices, wall?.end ?? divider?.point ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
     markup += `<polyline points="${points.map(point => point.join(',')).join(' ')}"
       fill="${tool === 'color' ? defaults.color : 'none'}" fill-opacity=".35" stroke="#23876d"
       stroke-width="${tool === 'wall' ? defaults.width : 1.6 / view.scale}"
@@ -449,6 +454,7 @@ function draftMarkup(wall) {
   } else if (!temporarySelection && tool === 'wall' && hover?.wallTarget) {
     markup += snapMarker(hover.wallTarget, 'wall-snap-target');
   }
+  if (divider?.stoveId) markup += snapMarker(divider.point, 'divider-snap-target');
   if (draftPart && !temporarySelection && !drag) {
     const host = itemBy(draftPart.wallId);
     const draftDoc = { ...doc(), objects: host ? [host, draftPart] : [draftPart] };
@@ -752,8 +758,8 @@ function addItem(item, message, adjustment) {
   }, message);
 }
 
-function partAt(kind, point) {
-  const part = makePart(kind, point, undefined, partDesigns[kind]);
+function partAt(kind, point, variant) {
+  const part = makePart(kind, point, undefined, variant);
   if (part.layer === 'fixture') snapFixture(part, doc());
   else if (part.layer === 'opening') snapPart(part, point, doc());
   return part;
@@ -763,24 +769,31 @@ function textAt(point, value) {
   return { id: uid(), layer: 'text', at: point, value, size: defaults.size, font: defaults.font, angle: 0 };
 }
 
-function paletteItemAt(kind, point) {
+function paletteItemAt(kind, point, variant = partDesigns[kind]) {
   if (Object.hasOwn(ROOM_LABELS, kind)) {
     return textAt(point, roomLabelText(ROOM_LABELS[kind], ROOM_LABEL_TATAMI.initial));
   }
-  if (Object.hasOwn(parts, kind)) return partAt(kind, point);
+  if (Object.hasOwn(parts, kind)) return partAt(kind, point, variant);
   return null;
+}
+
+function dividerPoint(point, free) {
+  const candidate = drawingPoint(point, free);
+  return snapDividerToStove(candidate, free ? null : pending[0], doc().objects,
+    Math.min(7 / view.scale, 9), dividerStartStove) ?? { point: candidate };
 }
 
 function drawDivider(point, free) {
   const start = pending[0];
+  const { point: end, stoveId } = dividerPoint(point, free);
   if (!start) {
-    pending = [point];
+    pending = [end];
+    dividerStartStove = stoveId;
     hover = null;
     renderContext();
     scheduleDraw();
     return;
   }
-  const end = drawingPoint(point, free);
   const length = lengthOf(start, end);
   if (length < 1) return;
   if (length > 50000) {
@@ -793,13 +806,14 @@ function drawDivider(point, free) {
   placeItem(part, '仕切り線を配置しました。');
 }
 
-function placePaletteItem(kind, point, free = false) {
-  if (isDividerPart(kind)) {
+function placePaletteItem(kind, point, free = false, variant = partDesigns[kind]) {
+  if (isDividerPart(kind, variant)) {
     drawDivider(point, free);
     return;
   }
-  const item = paletteItemAt(kind, point);
-  const name = item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
+  const item = paletteItemAt(kind, point, variant);
+  const name = kind === 'kitchen' ? PART_DESIGNS.kitchen.choices[variant]
+    : item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
   if (item) placeItem(item, name + 'を配置しました。');
 }
 
@@ -1208,7 +1222,7 @@ stage.addEventListener('pointermove', event => {
   } else if (kind && !isDividerPart(kind) && editable(tool) && !fileBusy) {
     draftPart = paletteItemAt(kind, toWorld(screenPoint(event)));
     scheduleDraw();
-  } else if (pending.length || (tool === 'wall' && editable('wall'))) {
+  } else if (pending.length || ((tool === 'wall' || drawingDivider()) && editable(tool))) {
     updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
   }
 });
@@ -1499,8 +1513,8 @@ function runAction(action, source) {
     if (!partDesignMenu.matches(':popover-open')) {
       const kind = source.dataset.designKind;
       partDesignMenu.dataset.kind = kind;
-      partDesignMenu.setAttribute('aria-label', parts[kind].name + 'のデザイン');
-      partDesignMenu.innerHTML = partDesignChoices(kind, partDesigns[kind]);
+      partDesignMenu.setAttribute('aria-label', (kind === 'kitchen' ? 'コンロ' : parts[kind].name) + 'のデザイン');
+      partDesignMenu.innerHTML = partDesignChoices(kind, partDesigns[kind === 'kitchen' ? 'stove' : kind]);
     }
   }
   else if (['flip-x', 'flip-y'].includes(action)) {
@@ -1522,6 +1536,7 @@ document.addEventListener('click', event => {
     const kind = partDesignMenu.dataset.kind;
     clearDraft();
     partDesigns[kind] = source.dataset.partDesign;
+    if (kind === 'kitchen') partDesigns.stove = source.dataset.partDesign;
     activeParts[parts[kind].layer] = kind;
     partDesignMenu.hidePopover();
     if (tool !== contextTool) selectTool(contextTool);
@@ -1542,7 +1557,10 @@ document.addEventListener('click', event => {
     if (source.dataset.part === 'column') {
       columnPlacement = true;
       clearDraft();
-    } else if (source.dataset.part) activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+    } else if (source.dataset.part) {
+      activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+      if (source.dataset.variant) partDesigns[source.dataset.part] = source.dataset.variant;
+    }
     else activeRoomLabel = source.dataset.roomLabel;
     draftPart = null;
     scheduleDraw();
@@ -1657,7 +1675,9 @@ document.addEventListener('change', event => {
 });
 
 const partMime = 'application/x-madorikun-part';
+const partVariantMime = 'application/x-madorikun-part-variant';
 let draggedKind = '';
+let draggedVariant;
 context.addEventListener('dragstart', event => {
   const button = event.target.closest('[data-part], [data-room-label][draggable="true"]');
   const kind = button?.dataset.part ?? button?.dataset.roomLabel;
@@ -1667,11 +1687,14 @@ context.addEventListener('dragstart', event => {
     return;
   }
   draggedKind = kind;
+  draggedVariant = button.dataset.variant;
   event.dataTransfer.setData(partMime, draggedKind);
+  if (draggedVariant) event.dataTransfer.setData(partVariantMime, draggedVariant);
   event.dataTransfer.effectAllowed = 'copy';
 });
 document.addEventListener('dragend', () => {
   draggedKind = '';
+  draggedVariant = undefined;
   draftPart = null;
   $('#drag-note').hidden = true;
   scheduleDraw();
@@ -1682,9 +1705,9 @@ area.addEventListener('dragover', event => {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'copy';
   if (types.includes('Files')) $('#drag-note').hidden = false;
-  else if (draggedKind && !isDividerPart(draggedKind)) {
+  else if (draggedKind && !isDividerPart(draggedKind, draggedVariant)) {
     const point = toWorld(screenPoint(event));
-    draftPart = paletteItemAt(draggedKind, point);
+    draftPart = paletteItemAt(draggedKind, point, draggedVariant);
     scheduleDraw();
   }
 });
@@ -1701,6 +1724,11 @@ area.addEventListener('drop', event => {
   scheduleDraw();
   const kind = event.dataTransfer.getData(partMime);
   if (kind && !fileBusy && !drag) {
+    const variant = event.dataTransfer.getData(partVariantMime);
+    if (kind === 'kitchen' && variant && Object.hasOwn(PART_DESIGNS.kitchen.choices, variant) && variant !== 'counter') {
+      activeParts.fixture = kind;
+      partDesigns.kitchen = variant;
+    }
     if (isDividerPart(kind)) {
       if (!editable('fixture')) return;
       activeParts.fixture = kind;

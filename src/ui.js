@@ -1,4 +1,4 @@
-import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -174,23 +174,38 @@ function partIcon(id, variant) {
   return `<svg aria-hidden="true" viewBox="${-width / 2 - 6} ${viewTop} ${width + 12} ${viewBottom - viewTop}">${drawing}</svg>`;
 }
 
+function partButton(id, title, variant, active, explicitVariant = false) {
+  return `<button type="button" draggable="true" data-part="${id}"
+    ${explicitVariant ? `data-variant="${variant}"` : ''} aria-pressed="${active}">
+    ${partIcon(id, variant)}<span>${title}</span></button>`;
+}
+
+function splitPartButton(id, title, control) {
+  return `<div class="part-split">${control}<button type="button" class="part-design-trigger"
+    data-action="part-designs" data-design-kind="${id}" popovertarget="part-designs"
+    aria-label="${title}のデザインを選ぶ" aria-controls="part-designs" aria-expanded="false">
+    <svg aria-hidden="true" viewBox="0 0 12 12"><path d="m4 2 6 4-6 4z" fill="currentColor"/></svg>
+  </button></div>`;
+}
+
 export function partPalette(layer, current, designs) {
   const wallLine = layer === 'wall' ? `<button type="button" data-action="wall-line" aria-pressed="${!current}">
     ${icon('wall', 24)}<span>壁線</span></button>` : '';
   return '<div class="part-palette">' + wallLine + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
-    const control = `<button type="button" draggable="true" data-part="${id}" aria-pressed="${current === id}">
-      ${partIcon(id, designs[id])}<span>${part.name}</span></button>`;
-    if (!Object.hasOwn(PART_DESIGNS, id)) return control;
-    return `<div class="part-split">${control}<button type="button" class="part-design-trigger"
-      data-action="part-designs" data-design-kind="${id}" popovertarget="part-designs"
-      aria-label="${part.name}のデザインを選ぶ" aria-controls="part-designs" aria-expanded="false">
-      <svg aria-hidden="true" viewBox="0 0 12 12"><path d="m4 2 6 4-6 4z" fill="currentColor"/></svg>
-    </button></div>`;
+    if (id === 'kitchen') {
+      const button = (variant, name = PART_DESIGNS.kitchen.choices[variant]) =>
+        partButton(id, name, variant, current === id && designs.kitchen === variant, true);
+      return button('worktop') + button('sink') + splitPartButton(id, 'コンロ', button(designs.stove, 'コンロ'))
+        + button('divider');
+    }
+    const control = partButton(id, part.name, designs[id], current === id);
+    return Object.hasOwn(PART_DESIGNS, id) ? splitPartButton(id, part.name, control) : control;
   }).join('') + '</div>';
 }
 
 export function partDesignChoices(kind, current) {
-  return Object.entries(PART_DESIGNS[kind].choices).map(([id, name]) => `<button type="button" data-part-design="${id}"
+  const choices = kind === 'kitchen' ? STOVE_CHOICES : PART_DESIGNS[kind].choices;
+  return Object.entries(choices).map(([id, name]) => `<button type="button" data-part-design="${id}"
       aria-pressed="${id === current}">${partIcon(kind, id)}<span>${name}</span></button>`).join('');
 }
 
@@ -239,7 +254,8 @@ ${escapeHtml(item.value)}</textarea></label>`
   const kitchen = item.kind === 'kitchen';
   const divider = kitchen && variant === 'divider';
   const dash = item.kind === 'washer' ? washerDashDefault(item.w, item.h) : null;
-  return (design ? selectField('デザイン', 'object-variant', variant, Object.entries(design.choices)) : '')
+  const designs = design ? Object.entries(design.choices).filter(([id]) => !kitchen || id !== 'counter' || variant === 'counter') : null;
+  return (designs ? selectField('デザイン', 'object-variant', variant, designs) : '')
     + (divider ? '' : numberField('幅', 'object-w', item.w, 4, 50000))
     + (item.layer === 'fixture' ? numberField(divider ? '長さ' : kitchen ? '奥行き' : '高さ', 'object-h', item.h, 1, 50000) : '')
     + (kitchen && variant === 'sink'

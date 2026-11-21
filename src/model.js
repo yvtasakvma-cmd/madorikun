@@ -1,5 +1,5 @@
 import { basinSymbols } from './basin-symbols.js';
-import { stoveSymbols } from './stove-symbols.js';
+import { stoveFrameRadii, stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
 
 export const layers = [
@@ -63,6 +63,7 @@ const kitchenPieces = {
   divider: { name: '仕切り線', size: [8, 116 * 166 / 522] },
   burner: { name: 'コンロ口', size: [16.25, 16.25] },
 };
+export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSymbols.stove3.name, burner: kitchenPieces.burner.name };
 
 export const PART_DESIGNS = {
   basin: {
@@ -231,6 +232,51 @@ export function projectOnWall(point, wall) {
   const delta = sub(point, wall.a);
   const t = square ? (delta[0] * vector[0] + delta[1] * vector[1]) / square : 0;
   return { t, distance: lengthOf(point, lerp(wall.a, wall.b, clamp(t, 0, 1))) };
+}
+
+export function snapDividerToStove(point, origin, objects, radius, stoveId) {
+  let best = radius;
+  let target = null;
+  for (const item of objects) {
+    if (item.kind !== 'kitchen' || (stoveId && item.id !== stoveId)) continue;
+    const symbol = Object.hasOwn(stoveSymbols, item.variant) ? stoveSymbols[item.variant] : null;
+    if (!symbol) continue;
+    const local = rotate(sub(point, item.at), -item.angle);
+    const [w, h] = [item.w / 2, item.h / 2];
+    if (Math.abs(local[0]) > w + best || Math.abs(local[1]) > h + best) continue;
+    const [rx, ry] = stoveFrameRadii(symbol, item.w, item.h);
+    if (Math.abs(local[0]) < w - rx - best && Math.abs(local[1]) < h - ry - best) continue;
+    const frame = [[1, 1], [-1, 1], [-1, -1], [1, -1]].flatMap(([sx, sy], corner) =>
+      Array.from({ length: 17 }, (_, i) => {
+        const angle = (corner + i / 16) * Math.PI / 2;
+        return [sx * (w - rx) + rx * Math.cos(angle), sy * (h - ry) + ry * Math.sin(angle)];
+      }));
+    const start = origin && rotate(sub(origin, item.at), -item.angle);
+    const ray = start && sub(local, start);
+    for (const [i, a] of frame.entries()) {
+      const b = frame[(i + 1) % frame.length];
+      let snapped;
+      if (start) {
+        // Intersect the frame along the chosen drawing angle.
+        const edge = sub(b, a);
+        const determinant = cross(ray, edge);
+        if (Math.abs(determinant) < 1e-7) continue;
+        const offset = sub(a, start);
+        const t = cross(offset, edge) / determinant;
+        const u = cross(offset, ray) / determinant;
+        if (t < 1e-7 || u < -1e-7 || u > 1 + 1e-7) continue;
+        snapped = lerp(start, local, t);
+      } else {
+        const { t } = projectOnWall(local, { a, b });
+        snapped = lerp(a, b, clamp(t, 0, 1));
+      }
+      const distance = lengthOf(local, snapped);
+      if (distance >= best) continue;
+      best = distance;
+      target = { point: add(item.at, rotate(snapped, item.angle)), stoveId: item.id };
+    }
+  }
+  return target;
 }
 
 export function snapFixtureToWall(part, walls, radius) {
