@@ -31,6 +31,12 @@ export const slidingSymbols = {
       [527.5, 51.6, 831, 51.6], [783, 65.7, 1051.5, 65.7],
     ],
   },
+  accordion: {
+    name: 'アコーディオンカーテン',
+    bounds: [0, 0, 294, 116],
+    stroke: 6,
+    peaks: 4,
+  },
 };
 
 export const windowSymbols = {
@@ -70,6 +76,12 @@ export function slidingSymbol(kind, variant) {
 }
 
 export function slidingDrawing(symbol, width, depth) {
+  if (symbol.peaks) {
+    const segments = symbol.peaks * 2;
+    const points = Array.from({ length: segments + 1 }, (_, i) =>
+      `${width * (i / segments - 0.5)} ${i % 2 ? -depth / 2 : depth / 2}`);
+    return `<path d="M${points.join('L')}"/>`;
+  }
   const [left, top, right, bottom] = symbol.bounds;
   const sx = width / (right - left);
   const sy = depth / (bottom - top);

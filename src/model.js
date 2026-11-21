@@ -115,6 +115,7 @@ export const partVariant = item => item.variant ?? (legacyPartVariants[item.kind
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 export const isSteppedSliding = (kind, variant) => kind === 'sliding' && variant === 'stepped';
+export const isAccordionSliding = (kind, variant) => kind === 'sliding' && variant === 'accordion';
 export const isDividerPart = (kind, variant) => kind === 'bathDivider' || (kind === 'kitchen' && variant === 'divider');
 export const hasAdjustableRadius = (kind, variant) => (kind === 'bath' && variant === 'rounded') || (kind === 'kitchen' && variant === 'sink');
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
@@ -152,7 +153,8 @@ export function openingFrameDepth(kind, width, depth, variant, steppedDepth) {
   const sliding = slidingSymbol(kind, variant);
   if (sliding) {
     const [left, top, right, bottom] = sliding.bounds;
-    return Math.min(depth, width * (bottom - top) / (right - left));
+    const symbolDepth = width * (bottom - top) / (right - left);
+    return isAccordionSliding(kind, variant) ? symbolDepth : Math.min(depth, symbolDepth);
   }
   return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;
 }
@@ -265,6 +267,7 @@ export function blank() {
 
 export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   const size = parts[kind].size;
+  if (isAccordionSliding(kind, variant)) return [size[0], openingFrameDepth(kind, size[0], 0, variant)];
   if (kind === 'bath' && variant === 'withBowl') {
     const [left, top, right, bottom] = BATH_BOWL_BOUNDS;
     return [(right - left) * size[1] / (bottom - top), size[1]];

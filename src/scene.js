@@ -1,4 +1,4 @@
-import { add, BATH_BOWL_BOUNDS, floors, hasAdjustableRadius, isDividerPart, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partCornerRadius, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
+import { add, BATH_BOWL_BOUNDS, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partCornerRadius, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
 import { slidingDrawing, slidingSymbol } from './sliding-symbols.js';
@@ -269,7 +269,10 @@ export function objectBounds(item) {
     return polygonBounds([[-item.w / 2, otherSide], [item.w / 2, otherSide], [item.w / 2, y], [-item.w / 2, y]]
       .map(point => add(item.at, rotate(point, item.angle))));
   }
-  return rotatedBounds(item.at, item.w, item.steppedDepth ?? item.h, item.angle);
+  const variant = partVariant(item);
+  const height = isAccordionSliding(item.kind, variant) ? openingFrameDepth(item.kind, item.w, 0, variant)
+    : item.steppedDepth ?? item.h;
+  return rotatedBounds(item.at, item.w, height, item.angle);
 }
 
 export function rotatedBounds(center, width, height, angle) {
