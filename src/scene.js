@@ -96,10 +96,16 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         transform="scale(${w / 100} ${h / 100})" d="${washerLabel}"/>`;
       break;
     }
-    case 'compass':
-      body = circle(0, 3, Math.min(w, h) * 0.48)
-        + `<path d="M0 ${-h / 2}L${w * 0.31} ${h * 0.29}L0 ${h * 0.13}L${-w * 0.31} ${h * 0.29}Z"/>`;
+    case 'compass': {
+      // Reference bounds include the tip above the ring and the outer edge of its stroke.
+      const scale = Math.min(w / 282, h / 284);
+      const point = (px, py) => `${(px - 230) * scale} ${(py - 174) * scale}`;
+      body = `<ellipse cx="0" cy="${4 * scale}" rx="${135.5 * scale}" ry="${132.5 * scale}"/>
+        <path d="M${point(224, 32)} L${point(298, 291)}
+          C${point(276, 267)} ${point(250, 250)} ${point(229, 250)}
+          C${point(208, 250)} ${point(181, 266)} ${point(156, 291)} Z" fill="${stroke}" stroke="none"/>`;
       break;
+    }
   }
   const square = isSlidingSymbol(kind) || kind === 'toilet' || Boolean(stove);
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"

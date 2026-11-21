@@ -74,6 +74,7 @@ const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   if (isSlidingSymbol(kind)) return 0.8;
+  if (kind === 'compass') return 1.4;
   if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) return stoveStrokeWidth;
   if (kind !== 'toilet') return PART_STROKE.defaultWidth;
   const { bounds: [, top, , bottom], lineWidth } = toiletSymbols[variant];
@@ -96,7 +97,7 @@ export const parts = {
   toilet: { name: 'トイレ', layer: 'fixture', size: [33, 49] },
   kitchen: { name: 'キッチン', layer: 'fixture', size: [116, 39] },
   washer: { name: '洗濯機置場', layer: 'fixture', size: [36, 36] },
-  compass: { name: '方位記号', layer: 'fixture', size: [37, 48] },
+  compass: { name: '方位記号', layer: 'fixture', size: [38, 38] },
 };
 
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
