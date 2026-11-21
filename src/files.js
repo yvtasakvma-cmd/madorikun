@@ -376,7 +376,10 @@ export async function exportSetup(doc, options, image, measuredHost) {
     ? new Set(doc.objects.filter(item => item.layer === 'text').map(textFontId)) : [];
   const fonts = new Map(await Promise.all(Array.from(fontIds, async id => [id, await outlineFont(id)])));
   const underlayImage = includeUnderlay && image ? await toDataUrl(mono ? await monochromeImage(image) : image) : '';
-  const drawing = renderScene(doc, { mono, showUnderlay: includeUnderlay, underlayImage, fonts });
+  const drawing = renderScene(doc, {
+    mono, showUnderlay: includeUnderlay, underlayImage, fonts,
+    groupLayers: options.format === 'svg' && options.groupLayers,
+  });
   ensure(drawing.trim(), '書き出す図形がありません。表示中のレイヤーを確認してください。');
   measuredHost.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g>' + drawing + '</g></svg>';
   const group = measuredHost.querySelector('g');

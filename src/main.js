@@ -1556,6 +1556,7 @@ function optionsFromForm() {
     pixels: clamp(Number(values.pixels.value) || 2000, 240, 6000),
     quality: clamp(Number(values.quality.value) || 92, 10, 100),
     includeUnderlay: values.includeUnderlay.checked && Boolean(state.asset),
+    groupLayers: values.format.value === 'svg' && values.groupLayers.checked,
   };
 }
 
@@ -1569,6 +1570,8 @@ async function updatePreview() {
   $('[data-jpeg]').hidden = options.format !== 'jpg';
   exportForm.elements.quality.disabled = options.format !== 'jpg';
   exportForm.elements.includeUnderlay.disabled = !state.asset;
+  $('[data-svg-grouping]').hidden = options.format !== 'svg';
+  exportForm.elements.groupLayers.disabled = options.format !== 'svg';
   const button = exportForm.querySelector('[type="submit"]');
   button.disabled = true;
   const preview = $('#export-preview');

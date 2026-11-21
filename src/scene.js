@@ -1,4 +1,4 @@
-import { add, BATH_BOWL_BOUNDS, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partCornerRadius, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
+import { add, BATH_BOWL_BOUNDS, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isSlidingSymbol, isWallSegment, layers, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partCornerRadius, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
 import { slidingDrawing, slidingSymbol } from './sliding-symbols.js';
@@ -371,7 +371,7 @@ export function objectIntersectsBox(item, box, segments, wallWidth) {
     strokeIntersectsBox(p, item.points[(i + 1) % item.points.length], 0, box));
 }
 
-export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, fonts = null, entries = false } = {}) {
+export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, fonts = null, entries = false, groupLayers = false } = {}) {
   const geometry = wallDrawingGeometry(doc.objects);
   const grouped = new Map(doc.layers.map(layer => [layer.id, []]));
   for (const item of doc.objects) grouped.get(item.layer)?.push(item);
@@ -430,7 +430,18 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       return { id: item.id, layer: layer.id, drawing };
     });
   });
-  return entries ? drawings : drawings.map(({ drawing }) => '<g>' + drawing + '</g>').join('');
+  if (entries) return drawings;
+  const wrapObject = ({ drawing }) => '<g>' + drawing + '</g>';
+  if (!groupLayers) return drawings.map(wrapObject).join('');
+  const layerGroups = new Map();
+  for (const entry of drawings) {
+    if (!layerGroups.has(entry.layer)) layerGroups.set(entry.layer, []);
+    layerGroups.get(entry.layer).push(wrapObject(entry));
+  }
+  return [...layerGroups].map(([id, children]) => {
+    const name = layers.find(layer => layer.id === id).name;
+    return `<g id="${escapeHtml(name)}" data-layer="${id}">${children.join('')}</g>`;
+  }).join('');
 }
 
 export function svgDocument(drawing, box, width = box.width, height = box.height) {

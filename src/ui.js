@@ -121,6 +121,7 @@ export function layout() {
             <label class="stack-field" data-jpeg>JPEG画質（%）<input name="quality" type="number" min="10" max="100" value="92" required></label>
             <label class="stack-field">図面の余白<input name="margin" type="number" min="0" max="100" value="16" required></label>
             <label class="check-field"><input name="includeUnderlay" type="checkbox">下絵を含める</label>
+            <label class="check-field" data-svg-grouping hidden><input name="groupLayers" type="checkbox" disabled>グループ分けする</label>
           </div>
         </div>
         <div class="dialog-footer"><span id="export-status" role="status"></span><button type="submit" class="button primary">${icon('export')}書き出す</button></div>
