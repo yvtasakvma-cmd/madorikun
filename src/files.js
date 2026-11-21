@@ -58,7 +58,12 @@ function validateProject(doc, underlay, assetPath) {
     if (isWallSegment(item)) {
       ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
       if (item.dashed !== undefined) ensure(flag(item.dashed));
+      if (item.dashPhase !== undefined) ensure(number(item.dashPhase, 0, 1));
       if (item.cutEnds !== undefined) ensure(Array.isArray(item.cutEnds) && item.cutEnds.length === 2 && item.cutEnds.every(flag));
+      if (item.dashJoinEnds !== undefined) {
+        ensure(Array.isArray(item.dashJoinEnds) && item.dashJoinEnds.length === 2
+          && item.dashJoinEnds.every((value, end) => flag(value) && (!value || item.cutEnds?.[end])));
+      }
     } else if (item.layer === 'floor' || item.layer === 'color') {
       ensure(Array.isArray(item.points) && item.points.length >= 3 && item.points.length <= 1000
         && item.points.every(point));
@@ -379,6 +384,7 @@ export async function exportSetup(doc, options, image, measuredHost) {
   const drawing = renderScene(doc, {
     mono, showUnderlay: includeUnderlay, underlayImage, fonts,
     groupLayers: options.format === 'svg' && options.groupLayers,
+    pdf: options.format === 'pdf',
   });
   ensure(drawing.trim(), '書き出す図形がありません。表示中のレイヤーを確認してください。');
   measuredHost.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g>' + drawing + '</g></svg>';

@@ -716,7 +716,7 @@ function cutWallClick(point) {
   }
   let result;
   const changed = commit(graph => {
-    result = cutWall(graph, wallCutStart.run, wallCutStart, target);
+    result = cutWall(graph, wallCutStart.run, wallCutStart, target, wallGeometry(doc()));
     return !result.error;
   });
   if (!changed) {

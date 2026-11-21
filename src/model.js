@@ -416,8 +416,15 @@ export function syncOpenings(doc, wallId) {
 }
 
 export const isWallSegment = item => item?.layer === 'wall' && item.kind !== 'column';
-export const wallDashArray = width => `${width * 2} ${width * 1.25}`;
-const wallEndCaps = wall => [0, 1].map(end => wall.cutEnds?.[end] ? 0 : wall.width / 2);
+const wallDashLengths = width => [width * 2, width * 1.25];
+export const wallDashArray = width => wallDashLengths(width).join(' ');
+const wallDashPeriod = width => {
+  const [dash, gap] = wallDashLengths(width);
+  return dash + gap;
+};
+const wrapDashOffset = (offset, period) => ((offset % period) + period) % period;
+const wallEndCaps = (wall, joinedDashEnds) => [0, 1].map(end =>
+  wall.cutEnds?.[end] && !joinedDashEnds?.[end] ? 0 : wall.width / 2);
 
 function regroupCutWall(walls) {
   const byEndpoint = new Map();
@@ -513,12 +520,17 @@ export function windowWallJoin(walls, first, t, width) {
   if (members.length < 2) return null;
   const start = members[0];
   const end = members.at(-1);
+  const startEnd = start.reversed ? 1 : 0;
+  const endEnd = end.reversed ? 0 : 1;
   const wall = {
     ...first,
     a: start.reversed ? start.wall.b : start.wall.a,
     b: end.reversed ? end.wall.a : end.wall.b,
-    cutEnds: [Boolean(start.wall.cutEnds?.[start.reversed ? 1 : 0]), Boolean(end.wall.cutEnds?.[end.reversed ? 0 : 1])],
+    cutEnds: [Boolean(start.wall.cutEnds?.[startEnd]), Boolean(end.wall.cutEnds?.[endEnd])],
   };
+  const dashJoinEnds = [Boolean(start.wall.dashJoinEnds?.[startEnd]), Boolean(end.wall.dashJoinEnds?.[endEnd])];
+  if (dashJoinEnds.some(Boolean)) wall.dashJoinEnds = dashJoinEnds;
+  else delete wall.dashJoinEnds;
   return { wall, t: (center - start.offset) / lengthOf(wall.a, wall.b), members };
 }
 
@@ -559,7 +571,17 @@ function cutRanges(entry, start, end, total) {
   });
 }
 
-export function cutWall(graph, run, first, second) {
+function cutDashPhase(wall, length, segments, distance) {
+  const origins = segments.map(([start, , offset]) => ({
+    distance: projectOnWall(start, wall).t * length, offset,
+  }));
+  const origin = origins.findLast(origin => origin.distance <= distance + 1e-7) ?? origins[0];
+  if (!origin) return wall.dashPhase ?? 0;
+  const period = wallDashPeriod(wall.width);
+  return wrapDashOffset(origin.offset + distance - origin.distance, period) / period;
+}
+
+export function cutWall(graph, run, first, second, geometry) {
   const a = run.get(first.wall.id), b = run.get(second.wall.id);
   if (!a || !b) return { error: 'missing' };
   const distances = [cutDistance(a, first.t), cutDistance(b, second.t)];
@@ -567,6 +589,7 @@ export function cutWall(graph, run, first, second) {
   if (end - start < 1) return { error: 'short' };
   const tail = [...run.values()].at(-1);
   const total = tail.offset + tail.length;
+  const preserveDashJoins = [...run.values()].some(entry => entry.wall.dashed);
   const plans = new Map();
   let added = 0;
   let selectedCount = 0;
@@ -601,6 +624,15 @@ export function cutWall(graph, run, first, second) {
       const piece = { ...wall, id: from === 0 ? wall.id : uid(), a: segment(from), b: segment(to),
         cutEnds: [cutEnds[0] || (from === 0 && Boolean(wall.cutEnds?.[0])),
           cutEnds[1] || (to === 1 && Boolean(wall.cutEnds?.[1]))] };
+      const dashJoinEnds = [
+        from === 0 && ((preserveDashJoins && cutEnds[0]) || Boolean(wall.dashJoinEnds?.[0])),
+        to === 1 && ((preserveDashJoins && cutEnds[1]) || Boolean(wall.dashJoinEnds?.[1])),
+      ];
+      if (dashJoinEnds.some(Boolean)) piece.dashJoinEnds = dashJoinEnds;
+      else delete piece.dashJoinEnds;
+      if (wall.dashed || wall.dashPhase !== undefined) {
+        piece.dashPhase = cutDashPhase(wall, plan.length, geometry.get(wall.id).segments, from * plan.length);
+      }
       if (selected) {
         if (group) piece.wallGroup = group;
         else delete piece.wallGroup;
@@ -752,6 +784,33 @@ function diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints) {
   return clipped ? { x: low[0], y: low[1], width: high[0] - low[0], height: high[1] - low[1] } : null;
 }
 
+function joinedDashCaps(walls) {
+  const ends = new Map();
+  for (const wall of walls) {
+    if (!wall.dashJoinEnds) continue;
+    for (const [end, point] of [wall.a, wall.b].entries()) {
+      if (!wall.dashJoinEnds?.[end]) continue;
+      const key = point.join(',');
+      if (!ends.has(key)) ends.set(key, []);
+      const other = end ? wall.a : wall.b;
+      const length = lengthOf(other, point);
+      const direction = sub(other, point).map(value => value / length);
+      ends.get(key).push({ wall, end, direction });
+    }
+  }
+  const caps = new Map();
+  for (const pair of ends.values()) {
+    if (pair.length !== 2 || !pair.some(({ wall }) => wall.dashed)) continue;
+    const [a, b] = pair.map(entry => entry.direction);
+    if (Math.abs(cross(a, b)) >= 1e-7 || a[0] * b[0] + a[1] * b[1] >= 0) continue;
+    for (const { wall, end } of pair) {
+      if (!caps.has(wall.id)) caps.set(wall.id, [false, false]);
+      caps.get(wall.id)[end] = true;
+    }
+  }
+  return caps;
+}
+
 export function wallJunctions(walls, openings) {
   const byDirection = [[], []];
   for (const wall of walls) {
@@ -762,6 +821,8 @@ export function wallJunctions(walls, openings) {
 
   const maxHalfWidth = byDirection.map(group => group.reduce((max, wall) => Math.max(max, wall.width / 2), 0));
   const joints = new Map();
+  // At an existing dashed joint, preserve the old stroke overlap while the pieces touch.
+  const dashed = joinedDashCaps(walls);
   for (const axis of [0, 1]) {
     const crossWalls = byDirection[1 - axis];
     const searchRadius = maxHalfWidth[1 - axis];
@@ -770,7 +831,7 @@ export function wallJunctions(walls, openings) {
       const radius = Math.max(searchRadius, halfWidth);
       const size = lengthOf(wall.a, wall.b);
       const direction = Math.sign(wall.b[axis] - wall.a[axis]);
-      const caps = wallEndCaps(wall);
+      const caps = wallEndCaps(wall, dashed.get(wall.id));
       const ends = [wall.a, wall.b].map((tip, index) => {
         let cap = caps[index];
         const outward = index === 0 ? -direction : direction;
@@ -795,6 +856,7 @@ export function wallJunctions(walls, openings) {
   addAngledWallJoins(walls, openings, byDirection, joints);
   for (const wall of walls) {
     if (wallDirection(wall) !== null) continue;
+    if (dashed.has(wall.id)) joints.set(wall.id, { ...joints.get(wall.id), caps: wallEndCaps(wall, dashed.get(wall.id)) });
     const clip = diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints);
     if (clip) joints.set(wall.id, { ...joints.get(wall.id), clip });
   }
@@ -811,11 +873,18 @@ export function wallSegments(wall, openings, caps = wallEndCaps(wall)) {
   const segments = [];
   const stop = 1 + caps[1] / size;
   let start = -caps[0] / size;
+  // The phase is a fraction of a dash cycle at the wall's logical start.
+  let dashOffset = 0;
+  if (wall.dashPhase !== undefined) {
+    const period = wallDashPeriod(wall.width);
+    dashOffset = wrapDashOffset(wall.dashPhase * period - caps[0], period);
+  }
   for (const [low, high] of intervals) {
     const end = Math.min(low, stop);
-    if (end > Math.max(0, start) + 0.0001) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, end)]);
+    if (end > Math.max(0, start) + 0.0001) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, end), dashOffset]);
+    if (high > start) dashOffset = 0;
     start = Math.max(start, high);
   }
-  if (start < 1 && start < stop) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, stop)]);
+  if (start < 1 && start < stop) segments.push([lerp(wall.a, wall.b, start), lerp(wall.a, wall.b, stop), dashOffset]);
   return segments;
 }

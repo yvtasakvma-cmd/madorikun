@@ -66,6 +66,25 @@ async function openProject(page, path) {
 const openings = project => project.objects.filter(item => item.kind === 'window').sort((a, b) => a.at[0] - b.at[0]);
 const wallHost = (project, opening) => project.objects.find(item => item.id === opening.wallId);
 
+function wallInk(page, y) {
+  return page.locator('#scene').evaluate(async (scene, y) => {
+    const svg = document.createElementNS(scene.namespaceURI, 'svg');
+    svg.setAttribute('width', '720');
+    svg.setAttribute('height', '500');
+    svg.appendChild(scene.cloneNode(true));
+    const image = new Image();
+    image.src = 'data:image/svg+xml,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = 720;
+    canvas.height = 500;
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, y, 720, 1).data;
+    return Array.from({ length: 720 }, (_, x) => pixels[x * 4] < 128 && pixels[x * 4 + 3] > 128);
+  }, y);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sceneObjects(page)).toHaveCount(0);
@@ -106,6 +125,59 @@ test('ハサミで継ぎ目をまたいで切り出し、移動・削除と Undo
   await expect.poll(wallPaths).toEqual(cut);
   await page.keyboard.press('Control+z');
   await expect.poll(wallPaths).toEqual(original);
+});
+
+test('破線の壁を切っても線と空白の位置が保たれ、移動・再読込後も維持される', async ({ page }, testInfo) => {
+  await tool(page, 'wall').click();
+  await page.locator('[data-field="default-dashed"]').check();
+  await drawWall(page, [[120, 310], [655, 310]]);
+  await placeWindow(page, [335, 310]);
+  await expect(sceneObjects(page)).toHaveCount(2);
+
+
+  const before = await wallInk(page, 310);
+  await tool(page, 'wall').click();
+  await action(page, 'wall-cut').click();
+  await clickPoints(page, [[215, 310], [545, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(4);
+  expect(await wallInk(page, 310)).toEqual(before);
+
+  await dragOnCanvas(page, [232, 310], [232, 410]);
+  const movedPath = testInfo.outputPath('dashed-wall.madori');
+  const moved = await saveProject(page, movedPath);
+  expect(openings(moved)[0].at[1]).toBeCloseTo(410, 0);
+  expect((await wallInk(page, 410)).slice(216, 544)).toEqual(before.slice(216, 544));
+  const stationary = await wallInk(page, 310);
+  expect(stationary.slice(0, 214)).toEqual(before.slice(0, 214));
+  expect(stationary.slice(546)).toEqual(before.slice(546));
+
+  await openProject(page, movedPath);
+  expect((await wallInk(page, 410)).slice(216, 544)).toEqual(before.slice(216, 544));
+  await tool(page, 'wall').click();
+  await action(page, 'wall-cut').click();
+  await clickPoints(page, [[400, 410], [480, 410]]);
+  await expect(sceneObjects(page)).toHaveCount(6);
+  expect((await wallInk(page, 410)).slice(216, 544)).toEqual(before.slice(216, 544));
+});
+
+test('既存の継ぎ目から切っても、壁を動かすまでは破線の見た目が保たれる', async ({ page }) => {
+  await tool(page, 'wall').click();
+  await page.locator('[data-field="default-dashed"]').check();
+  await drawWall(page, [[120, 310], [270, 310], [550, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(2);
+  const before = await wallInk(page, 310);
+
+  await action(page, 'wall-cut').click();
+  await clickPoints(page, [[270, 310], [435, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(3);
+  expect(await wallInk(page, 310)).toEqual(before);
+
+  await dragOnCanvas(page, [303, 310], [303, 410]);
+  const stationary = await wallInk(page, 310);
+  const moved = await wallInk(page, 410);
+  expect(stationary.slice(270, 435).some(Boolean)).toBe(false);
+  expect(moved.slice(0, 270).some(Boolean)).toBe(false);
+  expect(moved.slice(271, 434)).toEqual(before.slice(271, 434));
 });
 
 test('形が変わらなかった壁のドラッグは未保存扱いにも Undo 履歴にもならない', async ({ page }, testInfo) => {

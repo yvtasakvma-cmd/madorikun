@@ -371,7 +371,18 @@ export function objectIntersectsBox(item, box, segments, wallWidth) {
     strokeIntersectsBox(p, item.points[(i + 1) % item.points.length], 0, box));
 }
 
-export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, fonts = null, entries = false, groupLayers = false } = {}) {
+function wallPath(wall, [a, b, offset], pdf) {
+  if (!wall.dashed || !offset) return `<path d="M${a.join(' ')}L${b.join(' ')}"/>`;
+  if (!pdf) return `<path d="M${a.join(' ')}L${b.join(' ')}" stroke-dashoffset="${offset}"/>`;
+  // svg2pdf reads the offset as an integer and only with a local dash array.
+  const scale = 1000;
+  const point = coords => coords.map(value => value * scale).join(' ');
+  return `<path d="M${point(a)}L${point(b)}" transform="scale(${1 / scale})"
+    stroke-width="${wall.width * scale}" stroke-dasharray="${wallDashArray(wall.width * scale)}"
+    stroke-dashoffset="${Math.round(offset * scale)}"/>`;
+}
+
+export function renderScene(doc, { mono = false, underlayImage = '', showUnderlay = true, fonts = null, entries = false, groupLayers = false, pdf = false } = {}) {
   const geometry = wallDrawingGeometry(doc.objects);
   const grouped = new Map(doc.layers.map(layer => [layer.id, []]));
   for (const item of doc.objects) grouped.get(item.layer)?.push(item);
@@ -395,7 +406,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
       } else if (isWallSegment(item)) {
         const { segments, clip, wedges, index } = geometry.get(item.id);
-        drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
+        drawing = segments.map(segment => wallPath(item, segment, pdf)).join('');
         const dash = item.dashed ? ` stroke-dasharray="${wallDashArray(item.width)}"` : '';
         drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}"${dash}>${drawing}</g>`;
         if (clip) {
