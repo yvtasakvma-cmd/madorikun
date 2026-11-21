@@ -81,6 +81,7 @@ const editable = id => layer(id)?.visible && !layer(id).locked;
 const placementKind = () => tool === 'wall' ? (columnPlacement ? 'column' : '')
   : tool === 'text' ? activeRoomLabel : activeParts[tool];
 const drawingDivider = () => tool === 'fixture' && isDividerPart(activeParts.fixture, partDesigns[activeParts.fixture]);
+const canUndoFloorVertex = () => tool === 'floor' && pending.length > 0;
 
 function status(message, error = false) {
   const output = $('#status');
@@ -170,7 +171,7 @@ function fieldInstructions(title) {
     select: '空いている所からドラッグで複数選択 · 図形をドラッグで移動',
     wall: columnPlacement ? '柱をドラッグ、または配置する場所をクリック'
       : 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
-    floor: '角をクリックして囲む · Shiftで角度を自由に',
+    floor: '角をクリックして囲む · Ctrl＋Zで角を一つ戻す · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
     fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · ${activeParts.fixture === 'bathDivider' ? '角丸浴槽' : 'コンロ'}の枠に吸着 · Shiftで自由な角度` : '',
@@ -257,7 +258,7 @@ function renderInspector() {
 
 function renderEditStatus() {
   $('#dirty-dot').hidden = !dirty();
-  $('[data-action="undo"]').disabled = !undoStack.length;
+  $('[data-action="undo"]').disabled = !undoStack.length && !canUndoFloorVertex();
   $('[data-action="redo"]').disabled = !redoStack.length;
 }
 
@@ -852,6 +853,7 @@ function finishPolygon(free = false) {
     return;
   }
   clearDraft();
+  renderEditStatus();
   if (Math.abs(points.reduce((area, p, i) => {
     const q = points[(i + 1) % points.length];
     return area + p[0] * q[1] - p[1] * q[0];
@@ -906,6 +908,7 @@ function drawingClick(event, point) {
       if (pending.length < 1000 && (!pending.length || lengthOf(next, pending.at(-1)) > 0.5)) {
         pending.push(next);
         hover = null;
+        if (tool === 'floor') renderEditStatus();
       }
     }
   } else if (tool === 'text') {
@@ -1538,8 +1541,15 @@ function runAction(action, source) {
     exportForm.elements.includeUnderlay.checked = false;
     exportDialog.showModal();
     updatePreview();
-  } else if (action === 'undo') restore(undoStack, redoStack, '元に戻しました。');
-  else if (action === 'redo') restore(redoStack, undoStack, 'やり直しました。');
+  } else if (action === 'undo') {
+    if (canUndoFloorVertex()) {
+      pending.pop();
+      if (hover) updateDraftHover(hover.point, hover.free);
+      else scheduleDraw();
+      renderEditStatus();
+      status('床の角を一つ戻しました。');
+    } else restore(undoStack, redoStack, '元に戻しました。');
+  } else if (action === 'redo') restore(redoStack, undoStack, 'やり直しました。');
   else if (action === 'delete') removeSelection();
   else if (action === 'fit') fit();
   else if (action === 'zoom-in') zoom(1.25);
