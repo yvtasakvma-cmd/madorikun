@@ -144,7 +144,9 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
 }
 
-export function openingFrameDepth(kind, width, depth, variant, steppedDepth) {
+export function openingFrameDepth(kind, width, depth, variant, steppedDepth, wallWidth) {
+  if (kind === 'window' && wallWidth !== undefined) return wallWidth;
+  depth = wallWidth ?? depth;
   if (isSteppedSliding(kind, variant) && steppedDepth !== undefined) return steppedDepth;
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const [left, top, right, bottom] = foldingSymbols[variant].frame;

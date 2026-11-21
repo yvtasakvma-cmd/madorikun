@@ -308,7 +308,8 @@ function transformView() {
 
 function displayBounds() {
   const d = doc();
-  const bounds = d.objects.map(objectBounds);
+  const geometry = wallGeometry(d);
+  const bounds = d.objects.map(item => objectBounds(item, geometry.get(item.wallId)?.wall.width));
   if (d.underlay) {
     const info = d.underlay;
     bounds.push(rotatedBounds(info.at, info.naturalWidth * info.scale, info.naturalHeight * info.scale, info.angle));
@@ -352,14 +353,15 @@ function corners(box) {
 }
 
 function boundsOf(items) {
-  return polygonBounds(items.flatMap(item => corners(objectBounds(item))));
+  const geometry = wallGeometry(doc());
+  return polygonBounds(items.flatMap(item => corners(objectBounds(item, geometry.get(item.wallId)?.wall.width))));
 }
 
 function partRotationBox(item) {
   if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
-  const frame = itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10);
+  const wallWidth = itemBy(item.wallId)?.width;
   const variant = partVariant(item);
-  const depth = openingFrameDepth(item.kind, item.w, frame, variant, item.steppedDepth);
+  const depth = openingFrameDepth(item.kind, item.w, clamp(item.h, 4, 10), variant, item.steppedDepth, wallWidth);
   const halfFrame = depth / 2;
   const swingDepth = openingSwingDepth(item.kind, item.w, item.h, depth, variant);
   const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);
@@ -1365,11 +1367,12 @@ function finishMarquee(current, addToSelection) {
   if (!addToSelection) selection.clear();
   selection.delete('underlay');
   const items = doc().objects;
-  const geometry = wallDrawingGeometry(items);
+  const geometry = wallGeometry(doc());
   const groups = groupWalls(items);
   const checkedGroups = new Set();
   for (const item of items) {
-    if (checkedGroups.has(item.wallGroup) || !objectIntersectsBox(item, current.bounds, geometry.get(item.id)?.segments)) continue;
+    if (checkedGroups.has(item.wallGroup)
+      || !objectIntersectsBox(item, current.bounds, geometry.get(item.id)?.segments, geometry.get(item.wallId)?.wall.width)) continue;
     if (item.wallGroup) checkedGroups.add(item.wallGroup);
     for (const member of selectableMembers(item, groups)) selection.add(member.id);
   }

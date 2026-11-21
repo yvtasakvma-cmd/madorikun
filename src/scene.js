@@ -31,7 +31,8 @@ function bathWithBowl(width, height) {
     <path d="M${pt(114.8, 137.5)}V${y(330)}"/>`;
 }
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius, foldingTriangles, steppedDepth } = {}) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default,
+  { dashLength, dashGap, cornerRadius, foldingTriangles, steppedDepth } = {}, wallWidth) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -42,7 +43,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
   const circle = (cx, cy, r, fill = 'none') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`;
-  const depth = openingFrameDepth(kind, w, frameDepth, variant, steppedDepth);
+  const depth = openingFrameDepth(kind, w, frameDepth, variant, steppedDepth, wallWidth);
   const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
   if (hasAdjustableRadius(kind, variant)) body = rect(x, y, w, h, 'none', partCornerRadius(kind, w, h, cornerRadius));
@@ -246,7 +247,7 @@ export function verticalTextCaret(value, position, size) {
   return [layout.xAt(column), layout.yAt(row) - layout.step / 2];
 }
 
-export function objectBounds(item) {
+export function objectBounds(item, wallWidth) {
   if (item.points) return polygonBounds(item.points);
   if (item.a) return polygonBounds([item.a, item.b]);
   if (item.layer === 'text') {
@@ -270,7 +271,8 @@ export function objectBounds(item) {
       .map(point => add(item.at, rotate(point, item.angle))));
   }
   const variant = partVariant(item);
-  const height = isAccordionSliding(item.kind, variant) ? openingFrameDepth(item.kind, item.w, 0, variant)
+  const height = item.kind === 'window' && wallWidth !== undefined ? wallWidth
+    : isAccordionSliding(item.kind, variant) ? openingFrameDepth(item.kind, item.w, 0, variant)
     : item.steppedDepth ?? item.h;
   return rotatedBounds(item.at, item.w, height, item.angle);
 }
@@ -359,9 +361,9 @@ function strokeIntersectsBox(a, b, width, box) {
   });
 }
 
-export function objectIntersectsBox(item, box, segments) {
+export function objectIntersectsBox(item, box, segments, wallWidth) {
   if (isWallSegment(item)) return segments.some(([a, b]) => strokeIntersectsBox(a, b, item.width, box));
-  const bounds = objectBounds(item);
+  const bounds = objectBounds(item, wallWidth);
   if (bounds.x > box.x + box.width || bounds.x + bounds.width < box.x
     || bounds.y > box.y + box.height || bounds.y + bounds.height < box.y) return false;
   if (!item.points) return true;
@@ -408,7 +410,8 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';
         drawing = textDrawing(item, color, halo, fonts);
       } else {
-        const frame = geometry.get(item.wallId)?.wall.width ?? Math.min(10, Math.max(4, item.h));
+        const wallWidth = geometry.get(item.wallId)?.wall.width;
+        const frame = Math.min(10, Math.max(4, item.h));
         const variant = partVariant(item);
         let hit = '';
         if (entries && item.layer === 'fixture') {
@@ -418,7 +421,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
           hit = `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" ${hitStyle}/>`;
         }
         drawing = `<g transform="translate(${item.at.join(' ')}) rotate(${item.angle}) scale(${item.flipX ? -1 : 1} ${item.flipY ? -1 : 1})">
-          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, variant, item)}
+          ${hit}${partDrawing(item.kind, item.w, item.h, mono, frame, item.strokeWidth, variant, item, wallWidth)}
         </g>`;
       }
       return { id: item.id, layer: layer.id, drawing };
