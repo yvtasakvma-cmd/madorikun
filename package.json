@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "npm run build && playwright test"
   },
   "dependencies": {
     "crc-32": "^1.2.2",
@@ -17,5 +18,8 @@
     "svg2pdf.js": "^2.9.0",
     "vite": "^8.3.8",
     "vite-plugin-static-copy": "^4.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
   }
 }

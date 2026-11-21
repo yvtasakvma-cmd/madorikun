@@ -13,6 +13,20 @@ npm run dev
 
 本番用ファイルは `npm run build` で `dist/` に生成されます。
 
+## 自動テスト
+
+初回は依存関係とテスト用の Chromium をインストールします。
+
+```sh
+npm ci
+npx playwright install chromium
+npm test
+```
+
+`npm test` は本番用ビルドを起動し、壁の切断・移動・削除・Undo、壁の厚みに合わせた窓枠の更新、SVG のグループ分けをブラウザで確認します。
+
+Playwright の Chromium が未インストールで `/usr/bin/chromium` が使える環境では、そのまま `npm test` を実行できます。別の実行ファイルを使う場合は環境変数 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` にパスを指定します。
+
 ## 使い方
 
 1. キャンバスにPDF・PNG・JPEG・WebPをドロップします。下絵の位置、倍率、回転、不透明度を右欄で調整できます。PDFの場合はページも選べます。
