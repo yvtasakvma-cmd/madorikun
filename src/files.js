@@ -2,6 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
 import { floors, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
+import { foldingSymbols, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
 import maruUrl from '../assets/ZenMaruGothic-Regular.ttf?url';
@@ -85,6 +86,12 @@ function validateProject(doc, underlay, assetPath) {
       }
       if (item.cornerRadius !== undefined) {
         ensure(item.kind === 'kitchen' && item.variant === 'sink' && number(item.cornerRadius, 0, 25000));
+      }
+      if (item.foldingTriangles !== undefined) {
+        ensure(item.kind === 'folding' && Object.hasOwn(foldingSymbols, item.variant)
+          && Array.isArray(item.foldingTriangles) && item.foldingTriangles.length >= 1
+          && item.foldingTriangles.length <= MAX_FOLDING_TRIANGLES
+          && item.foldingTriangles.every(position => number(position, 0, 1)));
       }
       for (const value of [item.dashLength, item.dashGap]) {
         if (value !== undefined) ensure(item.kind === 'washer' && number(value, WASHER_DASH.min, WASHER_DASH.max));

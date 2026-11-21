@@ -1,4 +1,5 @@
 import './style.css';
+import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
   add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToStove, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
@@ -400,7 +401,8 @@ function handlesMarkup(items) {
     const worldPoint = point => add(item.at, rotate(point, item.angle));
     const left = worldPoint([-item.w / 2, 0]);
     const right = worldPoint([item.w / 2, 0]);
-    const local = corners(partRotationBox(item));
+    const box = partRotationBox(item);
+    const local = corners(box);
     const outline = local.map(worldPoint);
     const rotationHandles = local.map(([x, y], i) => {
       const [sx, sy] = DIRECTIONS[HANDLES[i]];
@@ -413,6 +415,12 @@ function handlesMarkup(items) {
     draw += item.layer === 'opening'
       ? handle(left, 'part-left') + handle(right, 'part-right')
       : outline.map((point, i) => handle(point, 'fixture-' + HANDLES[i])).join('');
+    if (item.kind === 'folding') {
+      const y = item.flipY ? box.y + box.height : box.y;
+      const flip = item.flipX ? -1 : 1;
+      draw += foldingTriangleLayout(partVariant(item), item.foldingTriangles).map(({ center }, index) =>
+        handle(worldPoint([(center - 0.5) * item.w * flip, y]), 'fold-triangle-' + index)).join('');
+    }
   } else if (items.length) {
     const box = boundsOf(items);
     draw = selectionEdges(box) + corners(box).map((point, i) => handle(point, HANDLES[i])).join('');
@@ -965,8 +973,17 @@ stage.addEventListener('pointerdown', event => {
     zoom(event.shiftKey ? 1 / 1.25 : 1.25, screen);
     return;
   }
-  const handle = !endedWall && ['select', 'underlay', 'opening', 'fixture'].includes(pointerTool)
+  let handle = !endedWall && ['select', 'underlay', 'opening', 'fixture'].includes(pointerTool)
     ? event.target.closest('[data-handle]')?.dataset.handle : null;
+  if (handle?.startsWith('fold-triangle-')) {
+    let nearest = Infinity;
+    for (const dot of overlay.querySelectorAll('[data-handle^="fold-triangle-"]')) {
+      const distance = lengthOf(point, [dot.cx.baseVal.value, dot.cy.baseVal.value]);
+      if (distance >= nearest) continue;
+      nearest = distance;
+      handle = dot.dataset.handle;
+    }
+  }
   const throughEdge = EDGE_HANDLES.includes(handle) && (event.shiftKey || event.altKey);
   const hitTarget = throughEdge
     ? document.elementsFromPoint(event.clientX, event.clientY).map(node => node.closest('[data-id]')).find(Boolean)
@@ -1160,6 +1177,14 @@ function handleDrag(graph, current, point, proportional) {
     syncOpenings(graph, item.id);
   } else if (handle === 'rotate-part') {
     current.rotationChanged = rotatePart(item, current.start, point, proportional);
+  } else if (handle.startsWith('fold-triangle-')) {
+    const index = Number(handle.slice('fold-triangle-'.length));
+    const triangles = foldingTriangleLayout(partVariant(item), item.foldingTriangles);
+    const { center, leftWidth, rightWidth } = triangles[index];
+    const [dx] = rotate(sub(point, current.start), -item.angle);
+    const position = center + dx * (item.flipX ? -1 : 1) / item.w;
+    item.foldingTriangles = triangles.map((triangle, i) =>
+      i === index ? clamp(position, leftWidth, 1 - rightWidth) : triangle.center);
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
   else if (handle.startsWith('fixture-')) resizeFixture(item, handle.slice(8), current.start, point, proportional);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
@@ -1598,12 +1623,15 @@ function modifyObject(id, key, value) {
       if (key === 'roomArea') room.count = Number(value.toFixed(2));
       else room.approximate = value;
       target.value = roomLabelText(room.name, room.count, room.approximate);
+    } else if (key === 'triangleCount') {
+      target.foldingTriangles = foldingTrianglePositions(partVariant(target), target.foldingTriangles, Math.round(value));
     } else if (key === 'variant' && (target.layer === 'fixture' || target.kind === 'folding')) {
       const [previousWidth, previousHeight] = partSize(target.kind, partVariant(target));
       const [newWidth, newHeight] = partSize(target.kind, value);
       target.w = clamp(target.w * newWidth / previousWidth, 4, 50000);
       target.h = clamp(target.h * newHeight / previousHeight, 1, 50000);
       target.variant = value;
+      if (target.kind === 'folding') delete target.foldingTriangles;
       if (target.kind === 'kitchen' && value !== 'sink') delete target.cornerRadius;
     } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);

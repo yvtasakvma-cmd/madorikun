@@ -69,7 +69,7 @@ export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSy
 
 export const PART_DESIGNS = {
   folding: {
-    default: 'zigzag',
+    default: 'singleTriangle',
     choices: {
       zigzag: 'ジグザグ',
       ...Object.fromEntries(Object.entries(foldingSymbols).map(([id, symbol]) => [id, symbol.name])),
@@ -99,8 +99,9 @@ export const PART_DESIGNS = {
   },
 };
 
-// Projects saved before toilet variants used the side-mounted tank by default.
-export const partVariant = item => item.variant ?? (item.kind === 'toilet' ? 'tank' : PART_DESIGNS[item.kind]?.default);
+// Preserve the original symbols when saved projects omit a variant.
+const legacyPartVariants = { toilet: 'tank', folding: 'zigzag' };
+export const partVariant = item => item.variant ?? (legacyPartVariants[item.kind] ?? PART_DESIGNS[item.kind]?.default);
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 const stoveScale = 39 / stoveSymbols.stove2.size[1];

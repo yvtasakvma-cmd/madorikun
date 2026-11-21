@@ -1,5 +1,6 @@
 import { floors, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
+import { foldingTriangleLayout, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 
 const icons = {
   logo: 'M3 3h18v18H3z M3 10h8v11 M11 16h5 M16 16v5 M15 3v9h6',
@@ -206,7 +207,8 @@ export function partPalette(layer, current, designs) {
 
 export function partDesignChoices(kind, current) {
   const choices = kind === 'kitchen' ? STOVE_CHOICES : PART_DESIGNS[kind].choices;
-  return Object.entries(choices).map(([id, name]) => `<button type="button" data-part-design="${id}"
+  return Object.entries(choices).filter(([id]) => kind !== 'folding' || id !== 'zigzag')
+    .map(([id, name]) => `<button type="button" data-part-design="${id}"
       aria-pressed="${id === current}">${partIcon(kind, id)}<span>${name}</span></button>`).join('');
 }
 
@@ -253,10 +255,15 @@ ${escapeHtml(item.value)}</textarea></label>`
   const design = Object.hasOwn(PART_DESIGNS, item.kind) ? PART_DESIGNS[item.kind] : null;
   const variant = partVariant(item);
   const kitchen = item.kind === 'kitchen';
+  const folding = item.kind === 'folding';
+  const triangleCount = folding ? foldingTriangleLayout(variant, item.foldingTriangles).length : 0;
   const divider = kitchen && variant === 'divider';
   const dash = item.kind === 'washer' ? washerDashDefault(item.w, item.h) : null;
-  const designs = design ? Object.entries(design.choices).filter(([id]) => !kitchen || id !== 'counter' || variant === 'counter') : null;
+  const hiddenDesign = kitchen ? 'counter' : folding ? 'zigzag' : null;
+  const designs = design ? Object.entries(design.choices).filter(([id]) => id !== hiddenDesign || variant === hiddenDesign) : null;
   return (designs ? selectField('デザイン', 'object-variant', variant, designs) : '')
+    + (triangleCount ? numberField('三角の数', 'object-triangleCount', triangleCount, 1, MAX_FOLDING_TRIANGLES)
+      + '<span class="inspector-hint">三角の頂点をドラッグして移動</span>' : '')
     + (divider ? '' : numberField('幅', 'object-w', item.w, 4, 50000))
     + (item.layer === 'fixture' ? numberField(divider ? '長さ' : kitchen ? '奥行き' : '高さ', 'object-h', item.h, 1, 50000) : '')
     + (kitchen && variant === 'sink'

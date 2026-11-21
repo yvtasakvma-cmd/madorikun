@@ -13,7 +13,7 @@ export const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
 const pointList = points => points.map(point => point.join(',')).join(' ');
 const ink = '#151b17';
 
-export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius } = {}) {
+export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidth, variant = PART_DESIGNS[kind]?.default, { dashLength, dashGap, cornerRadius, foldingTriangles } = {}) {
   const x = -w / 2;
   const y = -h / 2;
   const stroke = mono ? '#000000' : ink;
@@ -37,7 +37,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       body = frame + `<path d="M${x} 0V${x} A${-x} ${-x} 0 0 1 0 0M${-x} 0V${x} A${-x} ${-x} 0 0 0 0 0"/>`;
       break;
     case 'folding':
-      body = folding ? foldingDrawing(folding, w, h, depth)
+      body = folding ? foldingDrawing(variant, w, h, depth, foldingTriangles)
         : frame + `<path d="M${x} 0l${w / 5} ${-h} ${w / 5} ${h} ${w / 5} ${-h} ${w / 5} ${h}"/>`;
       break;
     case 'window':

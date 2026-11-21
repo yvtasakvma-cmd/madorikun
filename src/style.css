@@ -99,6 +99,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #stage.is-panning, #stage.is-panning * { cursor: grab !important; }
 #stage.is-panning:active, #stage.is-panning:active * { cursor: grabbing !important; }
 #stage .drag-handle { cursor: crosshair; pointer-events: all; }
+#stage [data-handle^="fold-triangle-"] { cursor: move; }
 #stage.temporary-selection, #stage.temporary-selection * { cursor: default; }
 #stage.part-placement-cursor, #stage.part-placement-cursor * { cursor: none; }
 #stage :is(.resize-edge, .move-group-handle) { pointer-events: none; }
@@ -147,6 +148,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #inspector input[type="number"] { width: 79px; }
 [data-room-area]:not([hidden]) { display: flex; align-items: center; gap: 12px; }
 .inspector-placeholder { margin: 0; padding: 10px; border: 1px dashed #e1e9e3; border-radius: 6px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.inspector-hint { color: var(--muted); font-size: 11px; }
 .inspector-name { display: block; overflow-wrap: anywhere; font-weight: 650; font-size: 12px; }
 .property-actions { display: flex; gap: 4px; }
 .part-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
