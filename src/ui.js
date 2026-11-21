@@ -1,4 +1,4 @@
-import { floors, isSteppedSliding, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, sinkRadius, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, hasAdjustableRadius, isDividerPart, isSteppedSliding, layers, openingFrameDepth, openingSwingDepth, PART_DESIGNS, PART_STROKE, parts, partCornerRadius, partSize, partStrokeDefault, partVariant, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, STOVE_CHOICES, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 import { foldingTriangleLayout, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 
@@ -194,11 +194,19 @@ export function partPalette(layer, current, designs) {
   const wallLine = layer === 'wall' ? `<button type="button" data-action="wall-line" aria-pressed="${!current}">
     ${icon('wall', 24)}<span>壁線</span></button>` : '';
   return '<div class="part-palette">' + wallLine + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
+    if (id === 'bathDivider') return '';
+    if (id === 'bath') {
+      const bath = partButton(id, part.name, designs[id], current === id);
+      return `<div class="fixture-group bath-group" role="group" aria-labelledby="bath-group-label">
+        <span class="fixture-group-label" id="bath-group-label">浴室</span>
+        ${splitPartButton(id, part.name, bath)}${partButton('bathDivider', parts.bathDivider.name, undefined, current === 'bathDivider')}
+      </div>`;
+    }
     if (id === 'kitchen') {
       const button = (variant, name = PART_DESIGNS.kitchen.choices[variant]) =>
         partButton(id, name, variant, current === id && designs.kitchen === variant, true);
-      return `<div class="kitchen-group" role="group" aria-labelledby="kitchen-group-label">
-        <span class="kitchen-group-label" id="kitchen-group-label">キッチン</span>
+      return `<div class="fixture-group kitchen-group" role="group" aria-labelledby="kitchen-group-label">
+        <span class="fixture-group-label kitchen-group-label" id="kitchen-group-label">キッチン</span>
         ${button('worktop')}${button('sink')}${splitPartButton(id, 'コンロ', button(designs.stove, 'コンロ'))}${button('divider')}
       </div>`;
     }
@@ -259,7 +267,7 @@ ${escapeHtml(item.value)}</textarea></label>`
   const kitchen = item.kind === 'kitchen';
   const folding = item.kind === 'folding';
   const triangleCount = folding ? foldingTriangleLayout(variant, item.foldingTriangles).length : 0;
-  const divider = kitchen && variant === 'divider';
+  const divider = isDividerPart(item.kind, variant);
   const dash = item.kind === 'washer' ? washerDashDefault(item.w, item.h) : null;
   const hiddenDesign = kitchen ? 'counter' : folding ? 'zigzag' : null;
   const designs = design ? Object.entries(design.choices).filter(([id]) => id !== hiddenDesign || variant === hiddenDesign) : null;
@@ -269,8 +277,8 @@ ${escapeHtml(item.value)}</textarea></label>`
       + '<span class="inspector-hint">三角の頂点をドラッグして移動</span>' : '')
     + (divider ? '' : numberField('幅', 'object-w', item.w, 4, 50000))
     + (item.layer === 'fixture' ? numberField(divider ? '長さ' : kitchen ? '奥行き' : '高さ', 'object-h', item.h, 1, 50000) : '')
-    + (kitchen && variant === 'sink'
-      ? numberField('角の丸み（R）', 'object-cornerRadius', sinkRadius(item.w, item.h, item.cornerRadius), 0, Math.min(item.w, item.h) / 2, 0.1) : '')
+    + (hasAdjustableRadius(item.kind, variant)
+      ? numberField('角の丸み（R）', 'object-cornerRadius', partCornerRadius(item.kind, item.w, item.h, item.cornerRadius), 0, Math.min(item.w, item.h) / 2, 0.1) : '')
     + numberField('線の太さ', 'object-strokeWidth', item.strokeWidth ?? partStrokeDefault(item.kind, variant), stroke.min, stroke.max, 0.01)
     + (dash === null ? ''
       : numberField('破線の長さ', 'object-dashLength', item.dashLength ?? dash, WASHER_DASH.min, WASHER_DASH.max, 0.01)

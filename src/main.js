@@ -1,8 +1,8 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
-  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToStove, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
@@ -45,7 +45,7 @@ const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, 
 partDesigns.kitchen = 'worktop';
 partDesigns.stove = 'stove2';
 let pending = [];
-let dividerStartStove;
+let dividerStartFrame;
 let wallChain = null;
 let temporarySelection = false;
 let hover = null;
@@ -80,8 +80,7 @@ const selectedObjects = () => doc().objects.filter(item => selection.has(item.id
 const editable = id => layer(id)?.visible && !layer(id).locked;
 const placementKind = () => tool === 'wall' ? (columnPlacement ? 'column' : '')
   : tool === 'text' ? activeRoomLabel : activeParts[tool];
-const isDividerPart = (kind, variant = partDesigns[kind]) => kind === 'kitchen' && variant === 'divider';
-const drawingDivider = () => tool === 'fixture' && isDividerPart(activeParts.fixture);
+const drawingDivider = () => tool === 'fixture' && isDividerPart(activeParts.fixture, partDesigns[activeParts.fixture]);
 
 function status(message, error = false) {
   const output = $('#status');
@@ -145,7 +144,7 @@ function reset(newDoc, asset) {
 
 function clearDraft() {
   pending = [];
-  dividerStartStove = undefined;
+  dividerStartFrame = undefined;
   wallChain = null;
   hover = null;
   draftPart = null;
@@ -174,7 +173,7 @@ function fieldInstructions(title) {
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
-    fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · コンロの枠に吸着 · Shiftで自由な角度` : '',
+    fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · ${activeParts.fixture === 'bathDivider' ? '角丸浴槽' : 'コンロ'}の枠に吸着 · Shiftで自由な角度` : '',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
   return label ? `<span class="context-hint">${label}</span>` : '';
@@ -470,7 +469,7 @@ function draftMarkup(wall) {
   } else if (!temporarySelection && tool === 'wall' && hover?.wallTarget) {
     markup += snapMarker(hover.wallTarget, 'wall-snap-target');
   }
-  if (divider?.stoveId) markup += snapMarker(divider.point, 'divider-snap-target');
+  if (divider?.frameId) markup += snapMarker(divider.point, 'divider-snap-target');
   if (draftPart && !temporarySelection && !drag) {
     const host = itemBy(draftPart.wallId);
     const draftDoc = { ...doc(), objects: host ? [host, draftPart] : [draftPart] };
@@ -793,18 +792,18 @@ function paletteItemAt(kind, point, variant = partDesigns[kind]) {
   return null;
 }
 
-function dividerPoint(point, free) {
+function dividerPoint(point, free, kind = activeParts.fixture) {
   const candidate = drawingPoint(point, free);
-  return snapDividerToStove(candidate, free ? null : pending[0], doc().objects,
-    Math.min(7 / view.scale, 9), dividerStartStove) ?? { point: candidate };
+  return snapDividerToFrame(candidate, free ? null : pending[0], doc().objects,
+    Math.min(7 / view.scale, 9), kind, dividerStartFrame) ?? { point: candidate };
 }
 
-function drawDivider(point, free) {
+function drawDivider(kind, variant, point, free) {
   const start = pending[0];
-  const { point: end, stoveId } = dividerPoint(point, free);
+  const { point: end, frameId } = dividerPoint(point, free, kind);
   if (!start) {
     pending = [end];
-    dividerStartStove = stoveId;
+    dividerStartFrame = frameId;
     hover = null;
     renderContext();
     scheduleDraw();
@@ -816,7 +815,7 @@ function drawDivider(point, free) {
     status('仕切り線が長すぎます。終点を始点に近づけてください。', true);
     return;
   }
-  const part = makePart('kitchen', lerp(start, end, 0.5), undefined, 'divider');
+  const part = makePart(kind, lerp(start, end, 0.5), undefined, variant);
   part.h = length;
   part.angle = (angleOf(start, end) + 270) % 360;
   placeItem(part, '仕切り線を配置しました。');
@@ -824,11 +823,11 @@ function drawDivider(point, free) {
 
 function placePaletteItem(kind, point, free = false, variant = partDesigns[kind]) {
   if (isDividerPart(kind, variant)) {
-    drawDivider(point, free);
+    drawDivider(kind, variant, point, free);
     return;
   }
   const item = paletteItemAt(kind, point, variant);
-  const name = kind === 'kitchen' ? PART_DESIGNS.kitchen.choices[variant]
+  const name = kind === 'kitchen' || kind === 'bath' ? PART_DESIGNS[kind].choices[variant]
     : item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
   if (item) placeItem(item, name + 'を配置しました。');
 }
@@ -1257,7 +1256,7 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if (kind && !isDividerPart(kind) && editable(tool) && !fileBusy) {
+  } else if (kind && !isDividerPart(kind, partDesigns[kind]) && editable(tool) && !fileBusy) {
     draftPart = paletteItemAt(kind, toWorld(screenPoint(event)));
     scheduleDraw();
   } else if (pending.length || ((tool === 'wall' || drawingDivider()) && editable(tool))) {
@@ -1644,7 +1643,7 @@ function modifyObject(id, key, value) {
       target.h = clamp(target.h * newHeight / previousHeight, 1, 50000);
       target.variant = value;
       if (target.kind === 'folding') delete target.foldingTriangles;
-      if (target.kind === 'kitchen' && value !== 'sink') delete target.cornerRadius;
+      if (!hasAdjustableRadius(target.kind, value)) delete target.cornerRadius;
     } else if (key === 'variant' && target.kind === 'sliding') {
       target.variant = value;
       if (!isSteppedSliding(target.kind, value)) delete target.steppedDepth;
@@ -1749,7 +1748,7 @@ area.addEventListener('dragover', event => {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'copy';
   if (types.includes('Files')) $('#drag-note').hidden = false;
-  else if (draggedKind && !isDividerPart(draggedKind, draggedVariant)) {
+  else if (draggedKind && !isDividerPart(draggedKind, draggedVariant ?? partDesigns[draggedKind])) {
     const point = toWorld(screenPoint(event));
     draftPart = paletteItemAt(draggedKind, point, draggedVariant);
     scheduleDraw();
@@ -1773,7 +1772,7 @@ area.addEventListener('drop', event => {
       activeParts.fixture = kind;
       partDesigns.kitchen = variant;
     }
-    if (isDividerPart(kind)) {
+    if (isDividerPart(kind, partDesigns[kind])) {
       if (!editable('fixture')) return;
       activeParts.fixture = kind;
       selectTool('fixture');

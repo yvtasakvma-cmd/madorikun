@@ -60,16 +60,17 @@ export const PART_STROKE = { defaultWidth: 1.15, min: 0.1, max: 8 };
 export const BATH_BOWL_BOUNDS = [51, 45, 266, 330];
 export const WASHER_DASH = { min: 0.01, max: 2500 };
 export const washerDashDefault = (w, h) => Math.min(w, h) * 0.043;
+const dividerSize = [8, 116 * 166 / 522];
 const kitchenPieces = {
   worktop: { name: '台', size: [116, 116 * 166 / 522] },
   sink: { name: 'シンク', size: [44, 44 * 300 / 442] },
-  divider: { name: '仕切り線', size: [8, 116 * 166 / 522] },
+  divider: { name: '仕切り線', size: dividerSize },
   burner: { name: 'コンロ口', size: [16.25, 16.25] },
 };
 export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSymbols.stove3.name, burner: kitchenPieces.burner.name };
 
 export const PART_DESIGNS = {
-  bath: { default: 'tub', choices: { tub: '浴槽', withBowl: '浴室（ボウル付き）' } },
+  bath: { default: 'tub', choices: { tub: '浴槽', withBowl: '浴室（ボウル付き）', rounded: '角丸浴槽' } },
   window: {
     default: 'overlap',
     choices: {
@@ -114,10 +115,13 @@ export const partVariant = item => item.variant ?? (legacyPartVariants[item.kind
 
 export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 export const isSteppedSliding = (kind, variant) => kind === 'sliding' && variant === 'stepped';
+export const isDividerPart = (kind, variant) => kind === 'bathDivider' || (kind === 'kitchen' && variant === 'divider');
+export const hasAdjustableRadius = (kind, variant) => (kind === 'bath' && variant === 'rounded') || (kind === 'kitchen' && variant === 'sink');
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   if (kind === 'bath' && variant === 'withBowl') return 1.57;
+  if (kind === 'bath' && variant === 'rounded') return 1.35;
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const { frame: [left, , right], stroke } = foldingSymbols[variant];
     return Number((stroke * parts.folding.size[0] / (right - left)).toFixed(2));
@@ -168,6 +172,7 @@ export const parts = {
   folding: { name: '折れ戸', layer: 'opening', size: [64, 22] },
   window: { name: '窓', layer: 'opening', size: [74, 10] },
   bath: { name: '浴槽', layer: 'fixture', size: [46, 72] },
+  bathDivider: { name: '仕切り線', layer: 'fixture', size: dividerSize },
   basin: { name: '洗面台', layer: 'fixture', size: [42, 34] },
   toilet: { name: 'トイレ', layer: 'fixture', size: [33, 49] },
   kitchen: { name: 'キッチン', layer: 'fixture', size: [116, 39] },
@@ -177,7 +182,10 @@ export const parts = {
 
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 export const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-export const sinkRadius = (w, h, radius) => Math.min(radius ?? Math.min(w, h) * 0.38, Math.min(w, h) / 2);
+export function partCornerRadius(kind, w, h, radius) {
+  const shortSide = Math.min(w, h);
+  return Math.min(radius ?? shortSide * (kind === 'bath' ? 0.25 : 0.38), shortSide / 2);
+}
 export const lerp = (a, b, t) => a.map((value, i) => value + (b[i] - value) * t);
 export const lengthOf = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 export const angleOf = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
@@ -261,6 +269,7 @@ export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
     const [left, top, right, bottom] = BATH_BOWL_BOUNDS;
     return [(right - left) * size[1] / (bottom - top), size[1]];
   }
+  if (kind === 'bath' && variant === 'rounded') return [72, 72 * 136 / 223];
   if (kind === 'folding' && Object.hasOwn(foldingSymbols, variant)) {
     const { frame: [left, top, right], tipY } = foldingSymbols[variant];
     return [size[0], size[0] * (top - tipY) / (right - left)];
@@ -295,17 +304,20 @@ export function projectOnWall(point, wall) {
   return { t, distance: lengthOf(point, lerp(wall.a, wall.b, clamp(t, 0, 1))) };
 }
 
-export function snapDividerToStove(point, origin, objects, radius, stoveId) {
+export function snapDividerToFrame(point, origin, objects, radius, dividerKind, frameId) {
   let best = radius;
   let target = null;
+  const frameKind = dividerKind === 'bathDivider' ? 'bath' : 'kitchen';
   for (const item of objects) {
-    if (item.kind !== 'kitchen' || (stoveId && item.id !== stoveId)) continue;
-    const symbol = Object.hasOwn(stoveSymbols, item.variant) ? stoveSymbols[item.variant] : null;
-    if (!symbol) continue;
+    if (item.kind !== frameKind || (frameId && item.id !== frameId)) continue;
+    const symbol = frameKind === 'kitchen' && Object.hasOwn(stoveSymbols, item.variant) ? stoveSymbols[item.variant] : null;
+    const roundedBath = frameKind === 'bath' && item.variant === 'rounded';
+    if (!symbol && !roundedBath) continue;
     const local = rotate(sub(point, item.at), -item.angle);
     const [w, h] = [item.w / 2, item.h / 2];
     if (Math.abs(local[0]) > w + best || Math.abs(local[1]) > h + best) continue;
-    const [rx, ry] = stoveFrameRadii(symbol, item.w, item.h);
+    const radius = roundedBath ? partCornerRadius(item.kind, item.w, item.h, item.cornerRadius) : null;
+    const [rx, ry] = symbol ? stoveFrameRadii(symbol, item.w, item.h) : [radius, radius];
     if (Math.abs(local[0]) < w - rx - best && Math.abs(local[1]) < h - ry - best) continue;
     const frame = [[1, 1], [-1, 1], [-1, -1], [1, -1]].flatMap(([sx, sy], corner) =>
       Array.from({ length: 17 }, (_, i) => {
@@ -334,7 +346,7 @@ export function snapDividerToStove(point, origin, objects, radius, stoveId) {
       const distance = lengthOf(local, snapped);
       if (distance >= best) continue;
       best = distance;
-      target = { point: add(item.at, rotate(snapped, item.angle)), stoveId: item.id };
+      target = { point: add(item.at, rotate(snapped, item.angle)), frameId: item.id };
     }
   }
   return target;

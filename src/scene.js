@@ -1,4 +1,4 @@
-import { add, BATH_BOWL_BOUNDS, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
+import { add, BATH_BOWL_BOUNDS, floors, hasAdjustableRadius, isDividerPart, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partCornerRadius, partStrokeDefault, partVariant, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
 import { slidingDrawing, slidingSymbol } from './sliding-symbols.js';
@@ -45,7 +45,9 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
   const depth = openingFrameDepth(kind, w, frameDepth, variant, steppedDepth);
   const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
-  switch (kind) {
+  if (hasAdjustableRadius(kind, variant)) body = rect(x, y, w, h, 'none', partCornerRadius(kind, w, h, cornerRadius));
+  else if (isDividerPart(kind, variant)) body = line(0, y, 0, -y);
+  else switch (kind) {
     case 'column':
       return rect(x, y, w, h, stroke);
     case 'swing':
@@ -103,14 +105,6 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
         body = rect(x, y, w, h);
         break;
       }
-      if (variant === 'sink') {
-        body = rect(x, y, w, h, 'none', sinkRadius(w, h, cornerRadius));
-        break;
-      }
-      if (variant === 'divider') {
-        body = line(0, y, 0, -y);
-        break;
-      }
       if (variant === 'burner') {
         body = burnerDrawing(0, 0, w / 90, h / 90);
         break;
@@ -149,7 +143,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     }
   }
   const square = isSlidingSymbol(kind) || kind === 'toilet' || kind === 'basin' || Boolean(folding)
-    || (kind === 'bath' && variant === 'withBowl')
+    || kind === 'bathDivider' || (kind === 'bath' && variant === 'withBowl')
     || (kind === 'kitchen' && variant !== 'counter');
   return `<g fill="none" stroke="${stroke}" stroke-width="${lineWidth}" stroke-linecap="${square ? 'butt' : 'round'}"
     stroke-linejoin="${square ? 'miter' : 'round'}">${body}</g>`;

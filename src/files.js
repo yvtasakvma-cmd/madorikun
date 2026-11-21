@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { floors, isSteppedSliding, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
+import { floors, hasAdjustableRadius, isSteppedSliding, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import { foldingSymbols, MAX_FOLDING_TRIANGLES } from './folding-symbols.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
@@ -88,7 +88,7 @@ function validateProject(doc, underlay, assetPath) {
         ensure(isSteppedSliding(item.kind, item.variant) && number(item.steppedDepth, 1, 50000));
       }
       if (item.cornerRadius !== undefined) {
-        ensure(item.kind === 'kitchen' && item.variant === 'sink' && number(item.cornerRadius, 0, 25000));
+        ensure(hasAdjustableRadius(item.kind, item.variant) && number(item.cornerRadius, 0, 25000));
       }
       if (item.foldingTriangles !== undefined) {
         ensure(item.kind === 'folding' && Object.hasOwn(foldingSymbols, item.variant)
