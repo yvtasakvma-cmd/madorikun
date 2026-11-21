@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { DEFAULT_TEXT_FONT, floors, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid, WASHER_DASH } from './model.js';
+import { floors, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, textFontId, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
@@ -359,7 +359,7 @@ async function monochromeImage(blob) {
 export async function exportSetup(doc, options, image, measuredHost) {
   const { mono, includeUnderlay } = options;
   const fontIds = doc.layers.find(layer => layer.id === 'text').visible
-    ? new Set(doc.objects.filter(item => item.layer === 'text').map(item => item.font ?? DEFAULT_TEXT_FONT)) : [];
+    ? new Set(doc.objects.filter(item => item.layer === 'text').map(textFontId)) : [];
   const fonts = new Map(await Promise.all(Array.from(fontIds, async id => [id, await outlineFont(id)])));
   const underlayImage = includeUnderlay && image ? await toDataUrl(mono ? await monochromeImage(image) : image) : '';
   const drawing = renderScene(doc, { mono, showUnderlay: includeUnderlay, underlayImage, fonts });

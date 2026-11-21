@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
+import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
 import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
@@ -254,7 +254,7 @@ function outlineFontLine(font, line, size, baseline, center) {
 }
 
 function textDrawing(item, color, halo, fonts) {
-  const id = item.font ?? DEFAULT_TEXT_FONT;
+  const id = textFontId(item);
   const font = fonts?.get(id);
   const family = TEXT_FONTS[id].family;
   const run = (text, x, y, rotateGlyph = false) => {

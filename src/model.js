@@ -36,7 +36,8 @@ export const TEXT_FONTS = {
   kiwi: { name: 'Kiwi Maru', family: 'MadoriKiwi' },
   shippori: { name: 'しっぽり明朝', family: 'MadoriShippori' },
 };
-export const DEFAULT_TEXT_FONT = 'gothic';
+export const DEFAULT_TEXT_FONT = 'biz';
+export const textFontId = item => item.font ?? 'gothic'; // Older projects may omit the font ID.
 
 export const ROOM_LABELS = { western: '洋室', japanese: '和室', ldk: 'LDK', dk: 'DK', k: 'K' };
 export const ROOM_LABEL_TATAMI = { initial: 6, min: 0.01, max: 999.99 };

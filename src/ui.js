@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_FONT, floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, TEXT_FONTS, WASHER_DASH, washerDashDefault } from './model.js';
+import { floors, layers, PART_DESIGNS, PART_STROKE, parts, partSize, partStrokeDefault, readRoomLabel, roomColors, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, TEXT_FONTS, textFontId, WASHER_DASH, washerDashDefault } from './model.js';
 import { escapeHtml, partDrawing } from './scene.js';
 
 const icons = {
@@ -220,7 +220,7 @@ export function propertyMarkup(item) {
   if (item.layer === 'color') return selectField('部屋の種別', 'object-room', item.room, roomChoices())
     + colorField('object-fill', item.fill);
   if (item.layer === 'text') {
-    const font = item.font ?? DEFAULT_TEXT_FONT;
+    const font = textFontId(item);
     const room = readRoomLabel(item.value);
     return selectField('書体', 'object-font', font, fontChoices())
       + `<div data-room-area ${room ? '' : 'hidden'}>
