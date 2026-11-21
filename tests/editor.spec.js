@@ -204,6 +204,29 @@ test('短い壁線をつないだ直線の継ぎ目に置いた窓が壁と一�
   expect(openings(reopened)[0].at[1]).toBeCloseTo(475, 0);
 });
 
+test('床の下描きが Ctrl を押している間も表示され、Undo で角だけが戻る', async ({ page }) => {
+  await tool(page, 'floor').click();
+  const corners = [[160, 300], [390, 300], [390, 480], [160, 480]];
+  await clickPoints(page, corners.slice(0, 3));
+  const draft = page.locator('#overlay polyline');
+  const vertices = page.locator('#overlay circle[fill="#20765f"]');
+  await expect(vertices).toHaveCount(3);
+  const beforeUndo = await draft.getAttribute('points');
+
+  await page.keyboard.down('Control');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+  await expect(draft).toHaveAttribute('points', beforeUndo);
+  await page.keyboard.press('z');
+  await expect(vertices).toHaveCount(2);
+  await expect(draft).toBeAttached();
+  await page.keyboard.up('Control');
+  await expect(vertices).toHaveCount(2);
+
+  await clickPoints(page, [...corners.slice(2), corners[0]]);
+  await expect(sceneObjects(page)).toHaveCount(1);
+  await expect(draft).toHaveCount(0);
+});
+
 test('SVG のグループ分けを切り替えても描画と重なり順が同じ', async ({ page }) => {
   await tool(page, 'wall').click();
   await drawWall(page, [[150, 300], [480, 300]]);

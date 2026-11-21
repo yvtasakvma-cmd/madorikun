@@ -467,7 +467,7 @@ function snapMarker([x, y], className) {
 function draftMarkup(wall) {
   let markup = '';
   const divider = drawingDivider() && hover && !temporarySelection ? dividerPoint(hover.point, hover.free) : null;
-  if (pending.length && !temporarySelection) {
+  if (pending.length && (!temporarySelection || tool === 'floor')) {
     const closing = hover?.atStart ? polygonForClosure(hover.free) : null;
     const vertices = closing ?? (wall ? [wall.start] : pending);
     const points = hover ? [...vertices, wall?.end ?? divider?.point ?? (closing ? vertices[0] : drawingPoint(hover.point, hover.free))] : vertices;
