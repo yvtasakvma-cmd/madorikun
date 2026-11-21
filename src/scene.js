@@ -1,7 +1,7 @@
 import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, openingSwingDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { foldingDrawing, foldingSymbols } from './folding-symbols.js';
-import { slidingDrawing, slidingSymbols } from './sliding-symbols.js';
+import { slidingDrawing, slidingSymbol } from './sliding-symbols.js';
 import { burnerDrawing, stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
@@ -42,8 +42,9 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     case 'window':
     case 'sliding': {
-      if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
-        body = slidingDrawing(slidingSymbols[variant], w, depth);
+      const symbol = slidingSymbol(kind, variant);
+      if (symbol) {
+        body = slidingDrawing(symbol, w, depth);
       } else if (kind === 'sliding' && variant === 'pocket') {
         const seam = -w * 0.013;
         const rail = -depth * 0.2;

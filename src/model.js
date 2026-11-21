@@ -1,6 +1,6 @@
 import { basinSymbols } from './basin-symbols.js';
 import { foldingSymbols } from './folding-symbols.js';
-import { slidingSymbols } from './sliding-symbols.js';
+import { slidingSymbol, slidingSymbols, windowSymbols } from './sliding-symbols.js';
 import { stoveFrameRadii, stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
 
@@ -68,6 +68,13 @@ const kitchenPieces = {
 export const STOVE_CHOICES = { stove2: stoveSymbols.stove2.name, stove3: stoveSymbols.stove3.name, burner: kitchenPieces.burner.name };
 
 export const PART_DESIGNS = {
+  window: {
+    default: 'overlap',
+    choices: {
+      overlap: '引き違い',
+      ...Object.fromEntries(Object.entries(windowSymbols).map(([id, symbol]) => [id, symbol.name])),
+    },
+  },
   folding: {
     default: 'singleTriangle',
     choices: {
@@ -112,9 +119,10 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
     const { frame: [left, , right], stroke } = foldingSymbols[variant];
     return Number((stroke * parts.folding.size[0] / (right - left)).toFixed(2));
   }
-  if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
-    const { bounds: [left, , right], stroke } = slidingSymbols[variant];
-    return Number((stroke * parts.sliding.size[0] / (right - left)).toFixed(2));
+  const sliding = slidingSymbol(kind, variant);
+  if (sliding) {
+    const { bounds: [left, , right], stroke } = sliding;
+    return Number((stroke * parts[kind].size[0] / (right - left)).toFixed(2));
   }
   if (isSlidingSymbol(kind)) return 0.8;
   if (kind === 'compass') return 1.4;
@@ -134,8 +142,9 @@ export function openingFrameDepth(kind, width, depth, variant, steppedDepth) {
     const [left, top, right, bottom] = foldingSymbols[variant].frame;
     return width * (bottom - top) / (right - left);
   }
-  if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
-    const [left, top, right, bottom] = slidingSymbols[variant].bounds;
+  const sliding = slidingSymbol(kind, variant);
+  if (sliding) {
+    const [left, top, right, bottom] = sliding.bounds;
     return Math.min(depth, width * (bottom - top) / (right - left));
   }
   return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;

@@ -33,6 +33,42 @@ export const slidingSymbols = {
   },
 };
 
+export const windowSymbols = {
+  centerRail: {
+    name: '中央線',
+    bounds: [39, 36.9, 270.9, 58.2],
+    stroke: 2.4,
+    frames: [[39, 36.9, 270.9, 58.2]],
+    rails: [[39, 47.5, 270.9, 47.5]],
+  },
+  threePanel: {
+    name: '3枚引き違い',
+    bounds: [29, 27.7, 601.5, 56.5],
+    stroke: 4.3,
+    frames: [[29, 27.7, 601.5, 56.5, 1.1]],
+    rails: [
+      [221, 27.7, 221, 56.5], [417.5, 27.7, 417.5, 56.5],
+      [29, 47, 228, 47], [213, 36.3, 428, 36.3], [409.5, 45.2, 601.5, 45.2],
+    ],
+  },
+  fourPanel: {
+    name: '4枚引き違い',
+    bounds: [58.5, 37.9, 806, 67.1],
+    stroke: 4.3,
+    frames: [[58.5, 37.9, 806, 67.1, 1.1]],
+    rails: [
+      [229, 37.9, 229, 67.1], [423, 37.9, 423, 67.1], [622.5, 37.9, 622.5, 67.1],
+      [58.5, 46.7, 244.5, 46.7], [216, 57, 439, 57],
+      [413, 46.7, 640.5, 46.7], [604.5, 57, 806, 57],
+    ],
+  },
+};
+
+export function slidingSymbol(kind, variant) {
+  const symbols = kind === 'window' ? windowSymbols : kind === 'sliding' ? slidingSymbols : null;
+  return symbols && Object.hasOwn(symbols, variant) ? symbols[variant] : null;
+}
+
 export function slidingDrawing(symbol, width, depth) {
   const [left, top, right, bottom] = symbol.bounds;
   const sx = width / (right - left);
