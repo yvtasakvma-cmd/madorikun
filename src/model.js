@@ -501,13 +501,23 @@ export function wallCutRun(walls, first) {
   }));
 }
 
+export function openingWallRun(walls, first) {
+  return wallCutRun(walls.filter(wall =>
+    wall.width === first.width && Boolean(wall.dashed) === Boolean(first.dashed)), first);
+}
+
 export function windowWallJoin(walls, first, t, width) {
+  const length = lengthOf(first.a, first.b);
+  const center = clamp(t, 0, 1) * length;
+  if (center >= width / 2 && length - center >= width / 2) return null;
+  return openingWallJoin(openingWallRun(walls, first), first, center, width);
+}
+
+export function openingWallJoin(run, first, fromFirst, width) {
   const half = width / 2;
-  const firstLength = lengthOf(first.a, first.b);
-  const fromFirst = clamp(t, 0, 1) * firstLength;
+  const firstLength = run.get(first.id).length;
   if (fromFirst >= half && firstLength - fromFirst >= half) return null;
 
-  const run = wallCutRun(walls.filter(wall => wall.width === first.width && Boolean(wall.dashed) === Boolean(first.dashed)), first);
   if (run.size < 2) return null;
   const tail = [...run.values()].at(-1);
   const length = tail.offset + tail.length;
@@ -532,6 +542,29 @@ export function windowWallJoin(walls, first, t, width) {
   if (dashJoinEnds.some(Boolean)) wall.dashJoinEnds = dashJoinEnds;
   else delete wall.dashJoinEnds;
   return { wall, t: (center - start.offset) / lengthOf(wall.a, wall.b), members };
+}
+
+export function doubleDoorWallRoom(graph, wall, run, center) {
+  const host = run.get(wall.id);
+  const tail = [...run.values()].at(-1);
+  const axis = sub(wall.b, wall.a).map(value => value / host.length);
+  let low = -host.offset;
+  let high = tail.offset + tail.length - host.offset;
+  for (const mate of graph.objects) {
+    if (!isWallSegment(mate) || run.has(mate.id)) continue;
+    const vector = sub(mate.b, mate.a);
+    const crossing = cross(axis, vector);
+    if (Math.abs(crossing) < 1e-7) continue;
+    const delta = sub(mate.a, wall.a);
+    const t = cross(delta, axis) / crossing;
+    if (t < -1e-7 || t > 1 + 1e-7) continue;
+    const distance = cross(delta, vector) / crossing;
+    if (distance < low - 1e-7 || distance > high + 1e-7) continue;
+    const inset = (mate.width / 2 + 0.5) * lengthOf(mate.a, mate.b) / Math.abs(crossing);
+    if (distance <= center) low = Math.max(low, distance + inset);
+    else high = Math.min(high, distance - inset);
+  }
+  return [low, high];
 }
 
 export function mergeWindowHost(graph, { wall, members }) {

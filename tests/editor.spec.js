@@ -227,6 +227,32 @@ test('形が変わらなかった壁のドラッグは未保存扱いにも Undo
   await expect(dirty).toBeHidden();
 });
 
+test('両開き戸を直線の継ぎ目を越えて広げても直角の取り合いが残る', async ({ page }, testInfo) => {
+  await tool(page, 'wall').click();
+  await setNumber(page, 'default-width', 20);
+  await drawWall(page, [[250, 160], [250, 300], [250, 530]]);
+  await drawWall(page, [[150, 530], [380, 530]]);
+  await expect(sceneObjects(page)).toHaveCount(3);
+
+  await tool(page, 'opening').click();
+  await page.locator('[data-part="double"]').click();
+  await clickPoints(page, [[250, 230]]);
+  const grip = page.locator('[data-handle="part-right"]');
+  const start = await grip.evaluate(dot => [dot.cx.baseVal.value, dot.cy.baseVal.value]);
+  await dragOnCanvas(page, start, [250, 440]);
+  await expect.poll(async () => Number(await page.locator('[data-field="object-w"]').inputValue())).toBeCloseTo(245, 0);
+
+  await setNumber(page, 'object-w', 500);
+  const path = testInfo.outputPath('wide-double-door.madori');
+  const project = await saveProject(page, path);
+  const door = project.objects.find(item => item.kind === 'double');
+  expect(door.at[1] + door.w / 2).toBeCloseTo(519.5, 0);
+  expect(project.objects.find(item => item.id === door.wallId).b[1]).toBeCloseTo(530, 0);
+  expect(project.objects.some(item => item.layer === 'wall' && item.a[1] === item.b[1])).toBe(true);
+  await openProject(page, path);
+  await expect(sceneObjects(page)).toHaveCount(3);
+});
+
 test('取り付け済みの窓枠が壁の厚みの変更に追従する', async ({ page }) => {
   await tool(page, 'wall').click();
   await setNumber(page, 'default-width', 32);

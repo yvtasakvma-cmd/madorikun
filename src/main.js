@@ -1,7 +1,7 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, mergeWindowHost, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, doubleDoorWallRoom, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, mergeWindowHost, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, openingWallJoin, openingWallRun, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallCutRun, wallDashArray, wallDirection, windowWallJoin,
 } from './model.js';
 import {
@@ -1192,6 +1192,23 @@ function moveItems(copy, current, delta) {
   return true;
 }
 
+function resizeAttachedDoubleDoor(item, graph, wall, requestedWidth, anchor, side = 0) {
+  const walls = graph.layers.find(layer => layer.id === 'wall').locked ? [wall] : graph.objects.filter(isWallSegment);
+  const run = openingWallRun(walls, wall);
+  const length = run.get(wall.id).length;
+  const [low, high] = doubleDoorWallRoom(graph, wall, run, item.t * length);
+  if (high - low < 4) return false;
+  const width = clamp(requestedWidth, 4, Math.min(50000, high - low));
+  const center = clamp(anchor + side * width / 2, low + width / 2, high - width / 2);
+  if (Math.abs(width - item.w) < 1e-7 && Math.abs(center - item.t * length) < 1e-7) return false;
+  const joined = openingWallJoin(run, wall, center, width);
+  if (joined) mergeWindowHost(graph, joined);
+  item.h = clamp(item.h * width / item.w, 1, 50000);
+  item.w = width;
+  positionOpening(item, joined?.wall ?? wall, joined?.t ?? center / length);
+  return true;
+}
+
 function resizeOpening(item, graph, handle, to) {
   const side = handle === 'part-left' ? -1 : 1;
   const axis = rotate([1, 0], item.angle);
@@ -1199,6 +1216,11 @@ function resizeOpening(item, graph, handle, to) {
   const delta = sub(to, opposite);
   let max = 50000;
   const wall = graph.objects.find(candidate => candidate.id === item.wallId);
+  if (wall && item.kind === 'double') {
+    const length = lengthOf(wall.a, wall.b);
+    return resizeAttachedDoubleDoor(item, graph, wall, side * (delta[0] * axis[0] + delta[1] * axis[1]),
+      projectOnWall(opposite, wall).t * length, side);
+  }
   if (wall) {
     const wallLength = lengthOf(wall.a, wall.b);
     const t = clamp(projectOnWall(opposite, wall).t, 0, 1);
@@ -1209,6 +1231,7 @@ function resizeOpening(item, graph, handle, to) {
   item.w = width;
   item.at = add(opposite, axis.map(v => v * side * width / 2));
   if (wall) positionOpening(item, wall, projectOnWall(item.at, wall).t);
+  return true;
 }
 
 function resizeGroup(graph, items, handle, from, to, proportional) {
@@ -1311,7 +1334,7 @@ function handleDrag(graph, current, point, proportional) {
     const position = center + dx * (item.flipX ? -1 : 1) / item.w;
     item.foldingTriangles = triangles.map((triangle, i) =>
       i === index ? clamp(position, leftWidth, 1 - rightWidth) : triangle.center);
-  } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
+  } else if (handle.startsWith('part-')) return resizeOpening(item, graph, handle, point);
   else if (handle.startsWith('fixture-')) resizeFixture(item, handle.slice(8), current.start, point, proportional);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
   else return resizeGroup(graph, items, handle, current.start, point, proportional);
@@ -1780,6 +1803,7 @@ function modifyObject(id, key, value) {
       if (!isSteppedSliding(target.kind, value)) delete target.steppedDepth;
     } else if (key === 'w' && target.layer === 'opening') {
       const wall = graph.objects.find(object => object.id === target.wallId);
+      if (wall && target.kind === 'double') return resizeAttachedDoubleDoor(target, graph, wall, value, target.t * lengthOf(wall.a, wall.b));
       if (wall) value = Math.min(value, lengthOf(wall.a, wall.b));
       target.h = clamp(target.h * value / target.w, 1, 50000);
       target.w = value;
