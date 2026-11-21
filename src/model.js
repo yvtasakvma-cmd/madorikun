@@ -1,3 +1,4 @@
+import { basinSymbols } from './basin-symbols.js';
 import { stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
 
@@ -58,6 +59,10 @@ export const WASHER_DASH = { min: 0.01, max: 2500 };
 export const washerDashDefault = (w, h) => Math.min(w, h) * 0.043;
 
 export const PART_DESIGNS = {
+  basin: {
+    default: 'rounded',
+    choices: Object.fromEntries(Object.entries(basinSymbols).map(([id, symbol]) => [id, symbol.name])),
+  },
   toilet: {
     default: 'tank',
     choices: Object.fromEntries(Object.entries(toiletSymbols).map(([id, symbol]) => [id, symbol.name])),
@@ -75,6 +80,10 @@ const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   if (isSlidingSymbol(kind)) return 0.8;
   if (kind === 'compass') return 1.4;
+  if (kind === 'basin') {
+    const { bounds: [left, , right], stroke } = basinSymbols[variant];
+    return Number((stroke * parts.basin.size[0] / (right - left)).toFixed(2));
+  }
   if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) return stoveStrokeWidth;
   if (kind !== 'toilet') return PART_STROKE.defaultWidth;
   const { bounds: [, top, , bottom], lineWidth } = toiletSymbols[variant];
@@ -181,6 +190,10 @@ export function blank() {
 
 export function partSize(kind, variant = PART_DESIGNS[kind]?.default) {
   const size = parts[kind].size;
+  if (kind === 'basin') {
+    const [left, top, right, bottom] = basinSymbols[variant].bounds;
+    return [size[0], (bottom - top) * size[0] / (right - left)];
+  }
   if (kind === 'kitchen' && Object.hasOwn(stoveSymbols, variant)) {
     return stoveSymbols[variant].size.map(dimension => dimension * stoveScale);
   }
