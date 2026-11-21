@@ -34,6 +34,7 @@ let savedRevision = 0;
 const undoStack = [];
 const redoStack = [];
 let tool = 'select';
+let contextTool = 'select';
 const selection = new Set();
 let defaults = { width: 8, dashed: false, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
@@ -130,6 +131,7 @@ function reset(newDoc, asset) {
   selection.clear();
   clearDraft();
   tool = 'select';
+  contextTool = 'select';
   pruneRasterUrls();
   renderAll();
   fit();
@@ -145,6 +147,7 @@ function clearDraft() {
 function selectTool(next, { keepSelection = false } = {}) {
   if (drag) cancelDrag();
   tool = next;
+  if (next !== 'select') contextTool = next;
   if (next === 'wall') columnPlacement = false;
   if (partDesignMenu.matches(':popover-open')) partDesignMenu.hidePopover();
   clearDraft();
@@ -153,7 +156,10 @@ function selectTool(next, { keepSelection = false } = {}) {
   renderAll();
 }
 
-function fieldInstructions() {
+function fieldInstructions(title) {
+  if (tool === 'select' && contextTool !== 'select') {
+    return `<span class="context-hint">選択中 · 上の「${title}」で編集を再開</span>`;
+  }
   const label = {
     select: '空いている所からドラッグで複数選択 · 図形をドラッグで移動',
     wall: columnPlacement ? '柱をドラッグ、または配置する場所をクリック'
@@ -167,36 +173,36 @@ function fieldInstructions() {
 }
 
 function renderContext() {
-  const title = tools.find(item => item.id === tool).name;
+  const title = tools.find(item => item.id === contextTool).name;
   let controls = '';
-  if (tool === 'wall') controls = partPalette('wall', placementKind(), partDesigns)
+  if (contextTool === 'wall') controls = partPalette('wall', columnPlacement ? 'column' : '', partDesigns)
     + (columnPlacement ? '' : numberField('太さ', 'default-width', defaults.width, 1, 80)
       + checkField('破線', 'default-dashed', defaults.dashed));
-  if (tool === 'floor') {
+  if (contextTool === 'floor') {
     const { pattern } = floors[defaults.preset];
     controls = selectField('種類', 'default-preset', defaults.preset, floorChoices());
     if (pattern) controls += selectField('向き', 'default-direction', defaults.direction, [['vertical', '縦'], ['horizontal', '横']]);
     if (pattern === 'boards') controls += numberField('板の間隔', 'default-spacing', defaults.spacing, 3, 150);
     if (pattern === 'tatami') controls += selectField('畳の枚数', 'default-tatami', String(defaults.tatami), [['4', '4枚'], ['6', '6枚'], ['8', '8枚']]);
   }
-  if (tool === 'color') controls = selectField('部屋の種別', 'default-room', defaults.room, roomChoices())
+  if (contextTool === 'color') controls = selectField('部屋の種別', 'default-room', defaults.room, roomChoices())
     + colorField('default-color', defaults.color);
-  if (tool === 'text') controls = roomLabelPalette(activeRoomLabel)
+  if (contextTool === 'text') controls = roomLabelPalette(activeRoomLabel)
     + selectField('書体', 'default-font', defaults.font, fontChoices())
     + numberField('サイズ', 'default-size', defaults.size, 4, 300);
-  if (Object.hasOwn(activeParts, tool)) controls = partPalette(tool, activeParts[tool], partDesigns)
+  if (Object.hasOwn(activeParts, contextTool)) controls = partPalette(contextTool, activeParts[contextTool], partDesigns)
     + '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>';
-  if (tool === 'underlay') controls = importButton() + (doc().underlay
+  if (contextTool === 'underlay') controls = importButton() + (doc().underlay
     ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
     : '<span class="context-hint">PDF・PNG・JPEG・WebPをキャンバスへドロップできます</span>');
-  context.innerHTML = `<strong class="context-label">${title}</strong>${controls}${fieldInstructions()}`;
+  context.innerHTML = `<strong class="context-label">${title}</strong>${controls}${fieldInstructions(title)}`;
 }
 
 function renderLayers() {
   $('#layer-list').innerHTML = [...doc().layers].reverse().map(item => {
     const details = layers.find(entry => entry.id === item.id);
     const count = item.id === 'underlay' ? Number(Boolean(doc().underlay)) : doc().objects.filter(object => object.layer === item.id).length;
-    const active = tool === item.id || [...selection].some(id => id === 'underlay' ? item.id === id : itemBy(id)?.layer === item.id);
+    const active = contextTool === item.id || [...selection].some(id => id === 'underlay' ? item.id === id : itemBy(id)?.layer === item.id);
     return `<div class="layer-row ${active ? 'active-layer' : ''} ${item.visible ? '' : 'hidden-layer'}">
       <button class="layer-select" type="button" data-tool="${item.id}" title="${details.name}ツール">
         <i style="--swatch:${details.swatch}"></i><span>${details.name}</span><small>${count}</small></button>
@@ -262,14 +268,17 @@ function renderTextEdit() {
 }
 
 function renderControls() {
-  for (const button of document.querySelectorAll('.tool')) button.setAttribute('aria-pressed', button.dataset.tool === tool);
+  for (const button of document.querySelectorAll('.tool')) {
+    button.setAttribute('aria-pressed', button.dataset.tool === tool);
+    button.classList.toggle('is-context-tool', button.dataset.tool === contextTool && contextTool !== tool);
+  }
   stage.dataset.tool = temporarySelection ? 'select' : tool;
   stage.classList.toggle('is-panning', drag?.type === 'pan' || space);
   stage.classList.toggle('rotating-part', drag?.handle === 'rotate-part');
   $('#project-name').value = doc().name;
   renderEditStatus();
   $('#object-count').textContent = doc().objects.length + ' 個の図形';
-  $('#empty-note').hidden = Boolean(doc().objects.length || doc().underlay || tool !== 'select');
+  $('#empty-note').hidden = Boolean(doc().objects.length || doc().underlay || contextTool !== 'select');
   renderContext();
   renderLayers();
   renderInspector();
@@ -466,7 +475,7 @@ function updateScene(graph) {
       cached.node.innerHTML = drawing;
       cached.drawing = drawing;
     }
-    const pointerEvents = locked.has(layerId) || (tool === 'underlay' && layerId !== 'underlay') ? 'none' : '';
+    const pointerEvents = locked.has(layerId) ? 'none' : '';
     if (cached.node.style.pointerEvents !== pointerEvents) cached.node.style.pointerEvents = pointerEvents;
     if (next !== cached.node) scene.insertBefore(cached.node, next);
     next = cached.node.nextElementSibling;
@@ -1291,6 +1300,7 @@ async function loadFile(file, underlayOnly = false) {
     };
     const asset = rasterAsset(bytes, raster.count, raster.image);
     tool = 'underlay';
+    contextTool = 'underlay';
     selection.clear();
     selection.add('underlay');
     clearDraft();
@@ -1477,8 +1487,11 @@ document.addEventListener('click', event => {
     partDesigns[kind] = source.dataset.partDesign;
     activeParts[parts[kind].layer] = kind;
     partDesignMenu.hidePopover();
-    renderContext();
-    stage.focus({ preventScroll: true });
+    if (tool !== contextTool) selectTool(contextTool);
+    else {
+      renderContext();
+      stage.focus({ preventScroll: true });
+    }
   } else if (source.dataset.tool) {
     selectTool(source.dataset.tool);
     if (tool === 'underlay' && doc().underlay && editable('underlay')) {
@@ -1486,6 +1499,7 @@ document.addEventListener('click', event => {
       renderAll();
     }
   } else if (source.dataset.part || Object.hasOwn(source.dataset, 'roomLabel')) {
+    if (tool !== contextTool) selectTool(contextTool);
     if (source.dataset.part === 'column') {
       columnPlacement = true;
       clearDraft();

@@ -52,6 +52,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tool { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; height: 36px; border: 1px solid transparent; border-radius: 7px; background: transparent; font-weight: 650; color: #40544a; }
 .tool:hover { background: #f0f4f1; }
 .tool[aria-pressed="true"] { color: #185644; background: var(--light-green); border-color: #d3e5dc; }
+.tool.is-context-tool { border-color: #a6c7b9; }
 .history-actions { gap: 3px; padding-left: 13px; border-left: 1px solid var(--line); }
 .context-bar { height: 56px; min-height: 56px; gap: 14px; border-bottom: 1px solid #dce4df; padding: 6px 24px; overflow: auto; color: #3c5248; }
 .context-label { flex: none; border-right: 1px solid var(--line); padding-right: 14px; line-height: 25px; }
@@ -88,6 +89,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #stage[data-tool="select"], #stage[data-tool="underlay"] { cursor: default; }
 #stage[data-tool="text"] { cursor: text; }
 #stage[data-tool="select"] [data-id], #stage[data-tool="underlay"] [data-id="underlay"] { cursor: move; }
+#stage[data-tool="underlay"] #scene > [data-id]:not([data-id="underlay"]) { pointer-events: none; }
 #stage[data-tool="zoom"] { cursor: zoom-in; }
 #stage.is-panning, #stage.is-panning * { cursor: grab !important; }
 #stage.is-panning:active, #stage.is-panning:active * { cursor: grabbing !important; }
