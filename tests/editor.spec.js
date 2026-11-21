@@ -108,6 +108,53 @@ test('ハサミで継ぎ目をまたいで切り出し、移動・削除と Undo
   await expect.poll(wallPaths).toEqual(original);
 });
 
+test('形が変わらなかった壁のドラッグは未保存扱いにも Undo 履歴にもならない', async ({ page }, testInfo) => {
+  await tool(page, 'wall').click();
+  await drawWall(page, [[190, 320], [480, 320]]);
+  const wall = sceneObjects(page).locator('g[stroke] > path');
+  await expect(wall).toHaveCount(1);
+  const original = await wall.getAttribute('d');
+
+  await tool(page, 'select').click();
+  await clickPoints(page, [[320, 320]]);
+  const handle = end => page.locator(`[data-handle="wall-${end}"]`);
+  const position = end => handle(end).evaluate(dot => [dot.cx.baseVal.value, dot.cy.baseVal.value]);
+  await dragOnCanvas(page, await position('b'), [530, 320]);
+  await expect(wall).not.toHaveAttribute('d', original);
+  await saveProject(page, testInfo.outputPath('wall.madori'));
+  const dirty = page.locator('#dirty-dot');
+  await expect(dirty).toBeHidden();
+  const saved = await wall.getAttribute('d');
+
+  const [x, y] = await position('b');
+  await dragOnCanvas(page, [x, y], [x, y + 20]);
+  await expect(wall).toHaveAttribute('d', saved);
+  await expect(dirty).toBeHidden();
+
+  await page.keyboard.down('Shift');
+  await dragOnCanvas(page, await position('b'), await position('a'));
+  await page.keyboard.up('Shift');
+  await expect(wall).toHaveAttribute('d', saved);
+  await expect(dirty).toBeHidden();
+
+  const start = await screenPoint(page, [320, 320]);
+  const away = await screenPoint(page, [320, 380]);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(away.x, away.y);
+  await expect(wall).not.toHaveAttribute('d', saved);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.up();
+  await expect(wall).toHaveAttribute('d', saved);
+  await expect(dirty).toBeHidden();
+
+  await page.keyboard.press('Control+z');
+  await expect(wall).toHaveAttribute('d', original);
+  await page.keyboard.press('Control+y');
+  await expect(wall).toHaveAttribute('d', saved);
+  await expect(dirty).toBeHidden();
+});
+
 test('取り付け済みの窓枠が壁の厚みの変更に追従する', async ({ page }) => {
   await tool(page, 'wall').click();
   await setNumber(page, 'default-width', 32);

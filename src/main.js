@@ -1145,14 +1145,15 @@ stage.addEventListener('pointerdown', event => {
 });
 
 function moveItems(copy, current, delta) {
+  if (!current.duplicate && lengthOf([0, 0], delta) < 1e-7) return false;
   if (current.ids.includes('underlay')) {
     copy.underlay.at = add(copy.underlay.at, delta);
-    return;
+    return true;
   }
   const chosen = new Set(current.ids);
   let items = copy.objects.filter(item => chosen.has(item.id));
   if (current.duplicate) {
-    if (copy.objects.length + items.length > OBJECT_LIMIT) return;
+    if (copy.objects.length + items.length > OBJECT_LIMIT) return false;
     for (const item of items) if (!current.copyIds.has(item.id)) current.copyIds.set(item.id, uid());
     items = items.map(source => {
       const item = structuredClone(source);
@@ -1188,6 +1189,7 @@ function moveItems(copy, current, delta) {
     selection.clear();
     for (const item of items) selection.add(item.id);
   }
+  return true;
 }
 
 function resizeOpening(item, graph, handle, to) {
@@ -1219,12 +1221,13 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
   let sx = signX && box.width > 0.01 ? clamp(side ? 1 + signX * delta[0] / box.width : signX * dx / box.width, 0.03, 30) : 1;
   let sy = signY && box.height > 0.01 ? clamp(side ? 1 + signY * delta[1] / box.height : signY * dy / box.height, 0.03, 30) : 1;
   if (proportional && !side) sx = sy = box.width >= box.height ? sx : sy;
+  if (sx === 1 && sy === 1) return false;
   const scalePoint = ([x, y]) => [
     sx === 1 ? x : anchor[0] + (x - anchor[0]) * sx,
     sy === 1 ? y : anchor[1] + (y - anchor[1]) * sy,
   ];
   const wallItems = items.filter(isWallSegment);
-  if (wallItems.some(item => lengthOf(scalePoint(item.a), scalePoint(item.b)) < 1)) return;
+  if (wallItems.some(item => lengthOf(scalePoint(item.a), scalePoint(item.b)) < 1)) return false;
   const walls = new Set(wallItems.map(item => item.id));
   for (const item of items) {
     if (item.a) {
@@ -1246,6 +1249,7 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
     }
   }
   for (const id of walls) syncOpenings(graph, id);
+  return true;
 }
 
 function rotatePart(item, from, to, free) {
@@ -1281,7 +1285,7 @@ function handleDrag(graph, current, point, proportional) {
     const info = graph.underlay;
     const initial = lengthOf(info.at, current.start);
     info.scale = clamp(info.scale * lengthOf(info.at, point) / Math.max(1, initial), 0.01, 50);
-    return;
+    return true;
   }
   const chosen = new Set(ids);
   const items = graph.objects.filter(item => chosen.has(item.id));
@@ -1290,10 +1294,11 @@ function handleDrag(graph, current, point, proportional) {
     const endpoint = handle.at(-1);
     const other = endpoint === 'a' ? item.b : item.a;
     const snapped = snapWallPoint(point, { excluded: chosen, origin: other, free: proportional });
-    if (lengthOf(snapped, other) >= 1) item[endpoint] = snapped;
+    if (lengthOf(snapped, other) < 1 || lengthOf(snapped, item[endpoint]) < 1e-7) return false;
+    item[endpoint] = snapped;
     syncOpenings(graph, item.id);
   } else if (handle === 'rotate-part') {
-    current.rotationChanged = rotatePart(item, current.start, point, proportional);
+    return rotatePart(item, current.start, point, proportional);
   } else if (handle === 'depth-top' || handle === 'depth-bottom') {
     const side = handle === 'depth-top' ? -1 : 1;
     const [, movement] = rotate(sub(point, current.start), -item.angle);
@@ -1309,7 +1314,8 @@ function handleDrag(graph, current, point, proportional) {
   } else if (handle.startsWith('part-')) resizeOpening(item, graph, handle, point);
   else if (handle.startsWith('fixture-')) resizeFixture(item, handle.slice(8), current.start, point, proportional);
   else if (handle.startsWith('vertex-')) item.points[Number(handle.slice(7))] = point;
-  else resizeGroup(graph, items, handle, current.start, point, proportional);
+  else return resizeGroup(graph, items, handle, current.start, point, proportional);
+  return true;
 }
 
 function updateDrag(event, proportional = event.shiftKey) {
@@ -1332,6 +1338,7 @@ function updateDrag(event, proportional = event.shiftKey) {
     return;
   }
   const graph = structuredClone(current.before.doc);
+  let changed;
   if (current.type === 'move') {
     current.copyIds ??= new Map();
     current.copyWallGroups ??= new Map();
@@ -1339,9 +1346,9 @@ function updateDrag(event, proportional = event.shiftKey) {
       current.moved = false;
       return;
     }
-    moveItems(graph, current, sub(point, current.start));
-  } else handleDrag(graph, current, point, proportional);
-  state = { ...current.before, doc: graph };
+    changed = moveItems(graph, current, sub(point, current.start));
+  } else changed = handleDrag(graph, current, point, proportional);
+  state = changed ? { ...current.before, doc: graph } : current.before;
   scheduleDraw();
 }
 
@@ -1418,8 +1425,7 @@ stage.addEventListener('pointerup', event => {
   drag = null;
   if (current.type === 'marquee') {
     finishMarquee(current, event.shiftKey);
-  } else if (current.type !== 'pan' && current.moved
-    && (current.handle !== 'rotate-part' || current.rotationChanged)) {
+  } else if (state !== current.before) {
     record(current.before);
     status(current.duplicate ? '図形を複製しました。' : '図形を更新しました。');
   }
