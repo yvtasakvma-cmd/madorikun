@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, positionOpening, roomColors,
   projectOnWall, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelArea, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -37,6 +37,7 @@ let tool = 'select';
 const selection = new Set();
 let defaults = { width: 8, dashed: false, preset: 'wood', room: 'western', color: roomColors.western.color, direction: 'vertical', tatami: 6, spacing: 12, size: 18, font: DEFAULT_TEXT_FONT };
 let activeParts = { opening: 'swing', fixture: 'bath' };
+let columnPlacement = false;
 let activeRoomLabel = '';
 const partDesigns = Object.fromEntries(Object.entries(PART_DESIGNS).map(([kind, design]) => [kind, design.default]));
 let pending = [];
@@ -72,6 +73,8 @@ const names = id => layers.find(item => item.id === id)?.name ?? '';
 const dirty = () => state.revision !== savedRevision;
 const selectedObjects = () => doc().objects.filter(item => selection.has(item.id));
 const editable = id => layer(id)?.visible && !layer(id).locked;
+const placementKind = () => tool === 'wall' ? (columnPlacement ? 'column' : '')
+  : tool === 'text' ? activeRoomLabel : activeParts[tool];
 
 function status(message, error = false) {
   const output = $('#status');
@@ -142,6 +145,7 @@ function clearDraft() {
 function selectTool(next, { keepSelection = false } = {}) {
   if (drag) cancelDrag();
   tool = next;
+  if (next === 'wall') columnPlacement = false;
   if (partDesignMenu.matches(':popover-open')) partDesignMenu.hidePopover();
   clearDraft();
   if (!keepSelection) selection.clear();
@@ -152,7 +156,8 @@ function selectTool(next, { keepSelection = false } = {}) {
 function fieldInstructions() {
   const label = {
     select: '空いている所からドラッグで複数選択 · 図形をドラッグで移動',
-    wall: 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
+    wall: columnPlacement ? '柱をドラッグ、または配置する場所をクリック'
+      : 'クリックで続けて描く · 終点を再クリックかCtrl＋クリックで終了 · Shiftで自由な角度',
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
@@ -164,8 +169,9 @@ function fieldInstructions() {
 function renderContext() {
   const title = tools.find(item => item.id === tool).name;
   let controls = '';
-  if (tool === 'wall') controls = numberField('太さ', 'default-width', defaults.width, 1, 80)
-    + checkField('破線', 'default-dashed', defaults.dashed);
+  if (tool === 'wall') controls = partPalette('wall', placementKind(), partDesigns)
+    + (columnPlacement ? '' : numberField('太さ', 'default-width', defaults.width, 1, 80)
+      + checkField('破線', 'default-dashed', defaults.dashed));
   if (tool === 'floor') {
     const { pattern } = floors[defaults.preset];
     controls = selectField('種類', 'default-preset', defaults.preset, floorChoices());
@@ -222,7 +228,7 @@ function renderInspector() {
     inspector.innerHTML = (item.kind ? `<span class="inspector-name">${parts[item.kind].name}</span>` : '')
       + propertyMarkup(item) + removeButton();
   } else if (items.length > 1) {
-    const walls = editableSelection().filter(item => item.layer === 'wall');
+    const walls = editableSelection().filter(isWallSegment);
     const width = walls.length && walls.every(wall => wall.width === walls[0].width) ? walls[0].width : null;
     const dashed = walls.every(wall => wall.dashed);
     inspector.innerHTML = `<p class="inspector-placeholder">${items.length}個の図形を選択中</p>`
@@ -362,7 +368,7 @@ function handlesMarkup(items) {
     const points = corners(box);
     draw = points.map((point, i) => edge(point, points[(i + 1) % 4], `${4 / view.scale} ${3 / view.scale}`)).join('')
       + points.map((point, i) => handle(point, HANDLES[i])).join('');
-  } else if (items.length === 1 && items[0].layer === 'wall') {
+  } else if (items.length === 1 && isWallSegment(items[0])) {
     const item = items[0];
     const box = boundsOf(items);
     draw = (box.width > 0.01 && box.height > 0.01 ? selectionEdges(box) : edge(item.a, item.b))
@@ -530,7 +536,7 @@ function renderAll() {
 
 function canEditItem(item) {
   if (!editable(item.layer)) return false;
-  return item.layer !== 'wall' || !layer('opening').locked || !doc().objects.some(part => part.wallId === item.id);
+  return !isWallSegment(item) || !layer('opening').locked || !doc().objects.some(part => part.wallId === item.id);
 }
 
 function groupWalls(items) {
@@ -564,7 +570,7 @@ function nearestWallEndpoint(point, { radius, excluded, accepts }) {
   let nearest = null;
   let best = radius / view.scale;
   for (const item of doc().objects) {
-    if (item.layer !== 'wall' || excluded?.has(item.id)) continue;
+    if (!isWallSegment(item) || excluded?.has(item.id)) continue;
     for (const endpoint of [item.a, item.b]) {
       const distance = lengthOf(endpoint, point);
       if (distance <= best && (!accepts || accepts(endpoint))) {
@@ -625,7 +631,7 @@ function intersectingWallTarget(point, start, end) {
   let nearest = null;
   let best = SNAP_RADIUS / view.scale;
   for (const wall of doc().objects) {
-    if (wall.layer !== 'wall' || wallDirection(wall) !== 1 - axis) continue;
+    if (!isWallSegment(wall) || wallDirection(wall) !== 1 - axis) continue;
     const crossing = [...end];
     crossing[axis] = wall.a[axis];
     const { t } = projectOnWall(crossing, wall);
@@ -685,7 +691,7 @@ function snapPart(part, point, graph, excluded = new Set()) {
   let target;
   if (graph.layers.find(item => item.id === 'wall').visible) {
     for (const wall of graph.objects) {
-      if (wall.layer !== 'wall' || excluded.has(wall.id) || lengthOf(wall.a, wall.b) < part.w) continue;
+      if (!isWallSegment(wall) || excluded.has(wall.id) || lengthOf(wall.a, wall.b) < part.w) continue;
       const result = projectOnWall(point, wall);
       if (result.distance < best) {
         best = result.distance;
@@ -723,7 +729,7 @@ function addItem(item, message, adjustment) {
 function partAt(kind, point) {
   const part = makePart(kind, point, undefined, partDesigns[kind]);
   if (part.layer === 'fixture') snapFixture(part, doc());
-  else snapPart(part, point, doc());
+  else if (part.layer === 'opening') snapPart(part, point, doc());
   return part;
 }
 
@@ -784,6 +790,11 @@ function drawingClick(event, point) {
     status('「' + names(tool) + '」レイヤーの表示とロックを確認してください。', true);
     return;
   }
+  const kind = placementKind();
+  if (kind) {
+    placePaletteItem(kind, point);
+    return;
+  }
   if (tool === 'wall') {
     if (!pending.length) {
       const target = wallSnapTarget(point, hover?.wallTarget);
@@ -815,10 +826,6 @@ function drawingClick(event, point) {
       }
     }
   } else if (tool === 'text') {
-    if (activeRoomLabel) {
-      placePaletteItem(activeRoomLabel, point);
-      return;
-    }
     // Suppress the canvas's default mouse focus after focusing the editor.
     event.preventDefault();
     if (addItem(textAt(point, '部屋名'), '文字を追加しました。')) {
@@ -826,8 +833,6 @@ function drawingClick(event, point) {
       editor.focus();
       editor.select();
     }
-  } else if (Object.hasOwn(activeParts, tool)) {
-    placePaletteItem(activeParts[tool], point);
   }
   scheduleDraw();
 }
@@ -962,7 +967,7 @@ function moveItems(copy, current, delta) {
     });
     copy.objects.push(...items);
   }
-  const movedWalls = new Set(items.filter(item => item.layer === 'wall').map(item => item.id));
+  const movedWalls = new Set(items.filter(isWallSegment).map(item => item.id));
   for (const item of items) {
     if (item.a) {
       item.a = add(item.a, delta);
@@ -1016,7 +1021,7 @@ function resizeGroup(graph, items, handle, from, to, proportional) {
     sx === 1 ? x : anchor[0] + (x - anchor[0]) * sx,
     sy === 1 ? y : anchor[1] + (y - anchor[1]) * sy,
   ];
-  const wallItems = items.filter(item => item.layer === 'wall');
+  const wallItems = items.filter(isWallSegment);
   if (wallItems.some(item => lengthOf(scalePoint(item.a), scalePoint(item.b)) < 1)) return;
   const walls = new Set(wallItems.map(item => item.id));
   for (const item of items) {
@@ -1139,14 +1144,15 @@ function updateRotationModifier(free) {
 }
 
 stage.addEventListener('pointermove', event => {
+  const kind = placementKind();
   if (drag?.pointer === event.pointerId) {
     latestMove = event;
     if (!queuedMove) queuedMove = requestAnimationFrame(() => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if ((Object.hasOwn(activeParts, tool) || (tool === 'text' && activeRoomLabel)) && editable(tool) && !fileBusy) {
-    draftPart = paletteItemAt(tool === 'text' ? activeRoomLabel : activeParts[tool], toWorld(screenPoint(event)));
+  } else if (kind && editable(tool) && !fileBusy) {
+    draftPart = paletteItemAt(kind, toWorld(screenPoint(event)));
     scheduleDraw();
   } else if (pending.length || (tool === 'wall' && editable('wall'))) {
     updateDraftHover(toWorld(screenPoint(event)), event.shiftKey);
@@ -1433,6 +1439,7 @@ function runAction(action, source) {
   else if (action === 'zoom-in') zoom(1.25);
   else if (action === 'zoom-out') zoom(1 / 1.25);
   else if (action === 'help') $('#help-dialog').showModal();
+  else if (action === 'wall-line') selectTool('wall');
   else if (action === 'part-designs') {
     if (!partDesignMenu.matches(':popover-open')) {
       const kind = source.dataset.designKind;
@@ -1470,7 +1477,10 @@ document.addEventListener('click', event => {
       renderAll();
     }
   } else if (source.dataset.part || Object.hasOwn(source.dataset, 'roomLabel')) {
-    if (source.dataset.part) activeParts[parts[source.dataset.part].layer] = source.dataset.part;
+    if (source.dataset.part === 'column') {
+      columnPlacement = true;
+      clearDraft();
+    } else if (source.dataset.part) activeParts[parts[source.dataset.part].layer] = source.dataset.part;
     else activeRoomLabel = source.dataset.roomLabel;
     draftPart = null;
     scheduleDraw();
@@ -1553,7 +1563,7 @@ document.addEventListener('change', event => {
     renderContext();
     scheduleDraw();
   } else if (group === 'selected' && (key === 'wallWidth' || key === 'wallDashed')) {
-    const walls = new Set(editableSelection().filter(item => item.layer === 'wall').map(item => item.id));
+    const walls = new Set(editableSelection().filter(isWallSegment).map(item => item.id));
     const property = key === 'wallWidth' ? 'width' : 'dashed';
     if (walls.size) commit(graph => {
       for (const item of graph.objects) if (walls.has(item.id)) item[property] = value;

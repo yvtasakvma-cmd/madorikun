@@ -175,7 +175,9 @@ function partIcon(id, variant) {
 }
 
 export function partPalette(layer, current, designs) {
-  return '<div class="part-palette">' + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
+  const wallLine = layer === 'wall' ? `<button type="button" data-action="wall-line" aria-pressed="${!current}">
+    ${icon('wall', 24)}<span>壁線</span></button>` : '';
+  return '<div class="part-palette">' + wallLine + Object.entries(parts).filter(([, part]) => part.layer === layer).map(([id, part]) => {
     const control = `<button type="button" draggable="true" data-part="${id}" aria-pressed="${current === id}">
       ${partIcon(id, designs[id])}<span>${part.name}</span></button>`;
     if (!Object.hasOwn(PART_DESIGNS, id)) return control;
@@ -204,6 +206,8 @@ export function roomLabelPalette(current) {
 }
 
 export function propertyMarkup(item) {
+  if (item.kind === 'column') return numberField('幅', 'object-w', item.w, 4, 50000)
+    + numberField('奥行き', 'object-h', item.h, 1, 50000);
   if (item.layer === 'wall') return numberField('太さ', 'object-width', item.width, 1, 80)
     + checkField('破線', 'object-dashed', item.dashed);
   if (item.layer === 'floor') {

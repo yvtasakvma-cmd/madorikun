@@ -1,4 +1,4 @@
-import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
+import { add, DEFAULT_TEXT_FONT, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, rotate, TEXT_FONTS, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
 import { stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
@@ -24,6 +24,8 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
   const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
   switch (kind) {
+    case 'column':
+      return rect(x, y, w, h, stroke);
     case 'swing':
       body = frame + `<path d="M${x} 0V${-w} A${w} ${w} 0 0 1 ${-x} 0"/>`;
       break;
@@ -241,7 +243,7 @@ function textDrawing(item, color, halo, fonts) {
 }
 
 export function wallDrawingGeometry(objects) {
-  const walls = objects.filter(item => item.layer === 'wall');
+  const walls = objects.filter(isWallSegment);
   const openings = new Map();
   for (const item of objects) {
     if (item.layer !== 'opening' || !item.wallId) continue;
@@ -268,7 +270,7 @@ function strokeIntersectsBox(a, b, width, box) {
 }
 
 export function objectIntersectsBox(item, box, segments) {
-  if (item.layer === 'wall') return segments.some(([a, b]) => strokeIntersectsBox(a, b, item.width, box));
+  if (isWallSegment(item)) return segments.some(([a, b]) => strokeIntersectsBox(a, b, item.width, box));
   const bounds = objectBounds(item);
   if (bounds.x > box.x + box.width || bounds.x + bounds.width < box.x
     || bounds.y > box.y + box.height || bounds.y + bounds.height < box.y) return false;
@@ -299,7 +301,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
         drawing = floorPattern(item, mono, entries);
       } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
-      } else if (item.layer === 'wall') {
+      } else if (isWallSegment(item)) {
         const segments = geometry.get(item.id).segments;
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
         const dash = item.dashed ? ` stroke-dasharray="${wallDashArray(item.width)}"` : '';

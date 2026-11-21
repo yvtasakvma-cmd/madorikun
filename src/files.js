@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import CRC32 from 'crc-32';
-import { DEFAULT_TEXT_FONT, floors, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid, WASHER_DASH } from './model.js';
+import { DEFAULT_TEXT_FONT, floors, isWallSegment, layers, lengthOf, OBJECT_LIMIT, PART_DESIGNS, PART_STROKE, parts, PROJECT_VERSION, roomColors, syncOpenings, TEXT_FONTS, uid, WASHER_DASH } from './model.js';
 import { renderScene, svgDocument } from './scene.js';
 import gothicUrl from '../assets/NotoSansJP-Regular.ttf?url';
 import minchoUrl from '../assets/NotoSerifJP-Regular.ttf?url';
@@ -44,9 +44,9 @@ function validateProject(doc, underlay, assetPath) {
     ensure(item && string(item.id, 120) && item.id.length && item.id !== 'underlay' && !ids.has(item.id));
     ids.set(item.id, item);
     if (item.wallGroup !== undefined) {
-      ensure(item.layer === 'wall' && string(item.wallGroup, 120) && item.wallGroup.length > 0);
+      ensure(isWallSegment(item) && string(item.wallGroup, 120) && item.wallGroup.length > 0);
     }
-    if (item.layer === 'wall') {
+    if (isWallSegment(item)) {
       ensure(point(item.a) && point(item.b) && number(item.width, 1, 80) && lengthOf(item.a, item.b) >= 1);
       if (item.dashed !== undefined) ensure(flag(item.dashed));
     } else if (item.layer === 'floor' || item.layer === 'color') {
@@ -65,6 +65,7 @@ function validateProject(doc, underlay, assetPath) {
       ensure(Object.hasOwn(parts, item.kind) && parts[item.kind].layer === item.layer && point(item.at)
         && number(item.angle) && number(item.w, 4, 50000) && number(item.h, 1, 50000)
         && flag(item.flipX) && flag(item.flipY));
+      if (item.kind === 'column') ensure(item.a === undefined && item.b === undefined && item.points === undefined);
       if (item.wallId !== undefined) ensure(item.layer === 'opening' && string(item.wallId, 120) && number(item.t, 0, 1));
       if (item.variant !== undefined) {
         ensure(Object.hasOwn(PART_DESIGNS, item.kind) && string(item.variant, 20)
@@ -81,7 +82,7 @@ function validateProject(doc, underlay, assetPath) {
   for (const item of doc.objects) {
     if (item.wallId === undefined) continue;
     const wall = ids.get(item.wallId);
-    ensure(wall?.layer === 'wall' && lengthOf(wall.a, wall.b) + 0.001 >= item.w, '建具と壁の対応が正しくありません。');
+    ensure(isWallSegment(wall) && lengthOf(wall.a, wall.b) + 0.001 >= item.w, '建具と壁の対応が正しくありません。');
   }
   if (doc.underlay !== null) {
     const info = doc.underlay;
@@ -184,7 +185,7 @@ export async function readProject(file) {
   const underlay = assetPath ? decoded[assetPath] : null;
   validateProject(doc, underlay, assetPath);
   migrateProject(doc);
-  for (const wall of doc.objects.filter(object => object.layer === 'wall')) syncOpenings(doc, wall.id);
+  for (const wall of doc.objects.filter(isWallSegment)) syncOpenings(doc, wall.id);
   return { doc, underlay };
 }
 
@@ -360,7 +361,7 @@ export async function exportSetup(doc, options, image, measuredHost) {
   measuredHost.replaceChildren();
   ensure(width || height, '書き出す図形がありません。');
   const stroke = doc.layers.find(layer => layer.id === 'wall').visible
-    ? doc.objects.reduce((max, item) => item.layer === 'wall' ? Math.max(max, item.width) : max, 0) : 0;
+    ? doc.objects.reduce((max, item) => isWallSegment(item) ? Math.max(max, item.width) : max, 0) : 0;
   const visibleLayers = new Set(doc.layers.filter(layer => layer.visible).map(layer => layer.id));
   const partStroke = doc.objects.reduce((max, item) =>
     (item.layer === 'opening' || item.layer === 'fixture') && visibleLayers.has(item.layer) ? Math.max(max, item.strokeWidth ?? 0) : max, 0);

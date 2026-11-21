@@ -66,6 +66,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .part-palette { display: flex; gap: 6px; }
 .part-palette button { width: 80px; min-height: 42px; display: grid; grid-template-rows: 26px auto; place-items: center; flex: none; gap: 1px; border: 1px solid #e2e8e4; border-radius: 6px; background: #f9fbfa; padding: 3px; font-size: 10px; cursor: grab; }
 .part-palette button:hover, .part-palette button[aria-pressed="true"] { background: var(--light-green); border-color: #a6c7b9; }
+.part-palette button[data-action="wall-line"] { cursor: pointer; }
 .part-palette svg { width: 28px; height: 25px; pointer-events: none; }
 .room-label-palette button { width: 64px; grid-template-rows: auto; align-content: center; font-size: 12px; }
 .room-label-palette button[data-room-label=""] { cursor: pointer; }

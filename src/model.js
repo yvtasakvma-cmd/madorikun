@@ -77,6 +77,7 @@ export function openingFrameDepth(kind, width, depth) {
 }
 
 export const parts = {
+  column: { name: '柱', layer: 'wall', size: [32, 32] },
   swing: { name: '片開き戸', layer: 'opening', size: [50, 50] },
   double: { name: '両開き戸', layer: 'opening', size: [70, 35] },
   sliding: { name: '引き戸', layer: 'opening', size: [72, 12] },
@@ -254,6 +255,7 @@ export function syncOpenings(doc, wallId) {
   }
 }
 
+export const isWallSegment = item => item?.layer === 'wall' && item.kind !== 'column';
 export const wallDashArray = width => `${width * 2} ${width * 1.25}`;
 
 export function wallDirection(wall) {
