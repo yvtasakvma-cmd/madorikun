@@ -1,8 +1,8 @@
 import './style.css';
 import { foldingTriangleLayout, foldingTrianglePositions } from './folding-symbols.js';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
-  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallCutRun, wallDashArray, wallDirection,
+  add, alignFinalCorner, angleOf, blank, clamp, cutWall, DEFAULT_TEXT_FONT, detach, floors, hasAdjustableRadius, isAccordionSliding, isDividerPart, isDrawingAngle, isSteppedSliding, isWallSegment, layers, lengthOf, lerp, makePart, mergeWindowHost, OBJECT_LIMIT, openingFrameDepth, openingSwingDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDividerToFrame, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallCutRun, wallDashArray, wallDirection, windowWallJoin,
 } from './model.js';
 import {
   escapeHtml, objectBounds, objectIntersectsBox, polygonBounds, renderScene, rotatedBounds, svgDocument, verticalTextCaret, wallDrawingGeometry,
@@ -823,20 +823,31 @@ function drawingPoint(point, free) {
   return corner || snapDrawingAngle(point, origin);
 }
 
-function snapPart(part, point, graph, excluded = new Set()) {
+function snapPart(part, point, graph, { excluded = new Set(), join = false, preview = false } = {}) {
   part.at = point;
   if (part.layer !== 'opening') return;
   detach(part);
-  let best = 13 / view.scale;
+  const wallLayer = graph.layers.find(item => item.id === 'wall');
+  if (!wallLayer.visible) return;
+  const radius = 13 / view.scale;
+  const walls = graph.objects.filter(item => isWallSegment(item) && !excluded.has(item.id));
+  const canJoin = part.kind === 'window' && !wallLayer.locked && (join || preview);
   let target;
-  if (graph.layers.find(item => item.id === 'wall').visible) {
-    for (const wall of graph.objects) {
-      if (!isWallSegment(wall) || excluded.has(wall.id) || lengthOf(wall.a, wall.b) < part.w) continue;
-      const result = projectOnWall(point, wall);
-      if (result.distance < best) {
-        best = result.distance;
-        target = { wall, t: result.t };
-      }
+  let nearest;
+  for (const wall of walls) {
+    const result = projectOnWall(point, wall);
+    if (result.distance >= radius) continue;
+    const candidate = { wall, ...result };
+    if (canJoin && (!nearest || result.distance < nearest.distance)) nearest = candidate;
+    if ((!target || result.distance < target.distance) && lengthOf(wall.a, wall.b) >= part.w) {
+      target = candidate;
+    }
+  }
+  if (nearest) {
+    const joined = windowWallJoin(walls, nearest.wall, nearest.t, part.w);
+    if (joined) {
+      if (join) mergeWindowHost(graph, joined);
+      target = joined;
     }
   }
   if (target) positionOpening(part, target.wall, target.t);
@@ -848,7 +859,7 @@ function snapFixture(part, graph) {
   part.at = snapFixtureToWall(part, wallGeometry(graph).values(), radius);
 }
 
-function addItem(item, message, adjustment) {
+function addItem(item, message, prepare) {
   if (!editable(item.layer)) {
     status('「' + names(item.layer) + '」レイヤーの表示とロックを確認してください。', true);
     return;
@@ -860,7 +871,7 @@ function addItem(item, message, adjustment) {
   selection.clear();
   selection.add(item.id);
   return commit(d => {
-    if (adjustment) applyWallAdjustment(d, adjustment);
+    prepare?.(d);
     d.objects.push(item);
   }, message);
 }
@@ -868,7 +879,7 @@ function addItem(item, message, adjustment) {
 function partAt(kind, point, variant) {
   const part = makePart(kind, point, undefined, variant);
   if (part.layer === 'fixture') snapFixture(part, doc());
-  else if (part.layer === 'opening') snapPart(part, point, doc());
+  else if (part.layer === 'opening') snapPart(part, point, doc(), { preview: true });
   return part;
 }
 
@@ -918,14 +929,15 @@ function placePaletteItem(kind, point, free = false, variant = partDesigns[kind]
     drawDivider(kind, variant, point, free);
     return;
   }
-  const item = paletteItemAt(kind, point, variant);
+  const opening = parts[kind]?.layer === 'opening';
+  const item = opening ? makePart(kind, point, undefined, variant) : paletteItemAt(kind, point, variant);
   const name = kind === 'kitchen' || kind === 'bath' ? PART_DESIGNS[kind].choices[variant]
     : item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
-  if (item) placeItem(item, name + 'を配置しました。');
+  if (item) placeItem(item, name + 'を配置しました。', opening ? graph => snapPart(item, point, graph, { join: true }) : undefined);
 }
 
-function placeItem(item, message) {
-  if (!addItem(item, message)) return false;
+function placeItem(item, message, prepare) {
+  if (!addItem(item, message, prepare)) return false;
   selectTool('select', { keepSelection: true });
   return true;
 }
@@ -989,7 +1001,7 @@ function drawingClick(event, point) {
       const wall = {
         id: uid(), layer: 'wall', wallGroup: wallChain.groupId, a: start, b: end, width: defaults.width, dashed: defaults.dashed,
       };
-      if (lengthOf(start, end) >= 1 && addItem(wall, '壁を追加しました。', adjustment)) {
+      if (lengthOf(start, end) >= 1 && addItem(wall, '壁を追加しました。', adjustment ? graph => applyWallAdjustment(graph, adjustment) : undefined)) {
         pending = [end];
         hover = null;
         wallChain.tailId = wall.id;
@@ -1165,7 +1177,7 @@ function moveItems(copy, current, delta) {
     } else if (item.points) {
       item.points = item.points.map(point => add(point, delta));
     } else if (item.layer === 'opening') {
-      if (!movedWalls.has(item.wallId)) snapPart(item, add(item.at, delta), copy, movedWalls);
+      if (!movedWalls.has(item.wallId)) snapPart(item, add(item.at, delta), copy, { excluded: movedWalls, join: items.length === 1 });
     } else {
       item.at = add(item.at, delta);
       if (item.layer === 'fixture' && items.length === 1) snapFixture(item, current.before.doc);

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { strFromU8, unzipSync } from 'fflate';
 
 const tool = (page, name) => page.locator(`.tool[data-tool="${name}"]`);
 const action = (page, name) => page.locator(`button[data-action="${name}"]`);
@@ -29,6 +30,42 @@ async function setNumber(page, field, value) {
   await input.press('Tab');
 }
 
+async function chooseWindow(page) {
+  await tool(page, 'opening').click();
+  await page.locator('[data-design-kind="window"]').click();
+  await page.locator('[data-part-design="centerRail"]').click();
+}
+
+async function placeWindow(page, point) {
+  await chooseWindow(page);
+  await clickPoints(page, [point]);
+}
+
+async function dragOnCanvas(page, from, to) {
+  const start = await screenPoint(page, from);
+  const end = await screenPoint(page, to);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function saveProject(page, path) {
+  const pending = page.waitForEvent('download');
+  await action(page, 'save').click();
+  const download = await pending;
+  await download.saveAs(path);
+  return JSON.parse(strFromU8(unzipSync(await readFile(path))['project.json']));
+}
+
+async function openProject(page, path) {
+  await page.locator('#open-input').setInputFiles(path);
+  await expect(page.locator('#status')).toContainText('制作ファイルを開きました');
+}
+
+const openings = project => project.objects.filter(item => item.kind === 'window').sort((a, b) => a.at[0] - b.at[0]);
+const wallHost = (project, opening) => project.objects.find(item => item.id === opening.wallId);
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sceneObjects(page)).toHaveCount(0);
@@ -53,12 +90,7 @@ test('ハサミで継ぎ目をまたいで切り出し、移動・削除と Undo
   await expect(page.locator('#inspector')).toContainText('3個の図形を選択中');
   const cut = await wallPaths();
 
-  const start = await screenPoint(page, [350, 310]);
-  const destination = await screenPoint(page, [350, 400]);
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(destination.x, destination.y, { steps: 8 });
-  await page.mouse.up();
+  await dragOnCanvas(page, [350, 310], [350, 400]);
   await expect.poll(wallPaths).not.toEqual(cut);
   const moved = await wallPaths();
   expect([moved[0], moved[4]]).toEqual([cut[0], cut[4]]);
@@ -82,10 +114,7 @@ test('取り付け済みの窓枠が壁の厚みの変更に追従する', async
   await drawWall(page, [[216, 148], [216, 627]]);
   await expect(sceneObjects(page)).toHaveCount(1);
 
-  await tool(page, 'opening').click();
-  await page.locator('[data-design-kind="window"]').click();
-  await page.locator('[data-part-design="centerRail"]').click();
-  await clickPoints(page, [[216, 350]]);
+  await placeWindow(page, [216, 350]);
   const window = sceneObjects(page).nth(1);
   const frame = window.locator('rect[fill="#ffffff"]');
   const frameDepth = async () => Number(await frame.getAttribute('height'));
@@ -97,6 +126,82 @@ test('取り付け済みの窓枠が壁の厚みの変更に追従する', async
   await expect.poll(frameDepth).toBeCloseTo(5, 6);
   await setNumber(page, 'object-width', 26);
   await expect.poll(frameDepth).toBeCloseTo(26, 6);
+});
+
+test('窓付きの壁を切り出して移動・Undo・再読込しても窓が追従する', async ({ page }, testInfo) => {
+  await tool(page, 'wall').click();
+  await setNumber(page, 'default-width', 24);
+  await drawWall(page, [[120, 310], [420, 310], [655, 310]]);
+  await placeWindow(page, [315, 310]);
+  await page.locator('[data-part="window"]').click();
+  await clickPoints(page, [[597, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(4);
+
+  await tool(page, 'wall').click();
+  await action(page, 'wall-cut').click();
+  await clickPoints(page, [[235, 310], [530, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(6);
+  const cut = await saveProject(page, testInfo.outputPath('cut.madori'));
+  const [inside, outside] = openings(cut);
+  expect(wallHost(cut, inside).a[0]).toBeCloseTo(235, 0);
+  expect(wallHost(cut, outside).a[0]).toBeCloseTo(530, 0);
+
+  const movedPath = testInfo.outputPath('moved.madori');
+  await dragOnCanvas(page, [382, 310], [382, 425]);
+  const moved = await saveProject(page, movedPath);
+  expect(openings(moved).map(item => item.wallId)).toEqual([inside.wallId, outside.wallId]);
+  expect(openings(moved)[0].at[1]).toBeCloseTo(425, 0);
+  expect(openings(moved)[1].at[1]).toBeCloseTo(310, 0);
+
+  await page.locator('#stage').focus();
+  await page.keyboard.press('Control+z');
+  const undone = await saveProject(page, testInfo.outputPath('undone.madori'));
+  expect(undone.objects).toEqual(cut.objects);
+  await openProject(page, movedPath);
+  await dragOnCanvas(page, [382, 425], [382, 480]);
+  const reopened = await saveProject(page, testInfo.outputPath('reopened.madori'));
+  expect(openings(reopened).map(item => item.wallId)).toEqual([inside.wallId, outside.wallId]);
+  expect(openings(reopened)[0].at[1]).toBeCloseTo(480, 0);
+  expect(openings(reopened)[1].at[1]).toBeCloseTo(310, 0);
+});
+
+test('短い壁線をつないだ直線の継ぎ目に置いた窓が壁と一緒に動く', async ({ page }, testInfo) => {
+  await tool(page, 'wall').click();
+  await setNumber(page, 'default-width', 24);
+  await drawWall(page, [[180, 310], [237, 310], [295, 310]]);
+  await expect(sceneObjects(page)).toHaveCount(2);
+  await chooseWindow(page);
+  const previewPoint = await screenPoint(page, [237, 310]);
+  await page.mouse.move(previewPoint.x, previewPoint.y);
+  const frameDepth = locator => expect.poll(async () => Number(await locator.locator('rect[fill="#ffffff"]').getAttribute('height')));
+  await frameDepth(page.locator('#overlay .part-preview')).toBeCloseTo(24, 6);
+  await expect(sceneObjects(page)).toHaveCount(2);
+  await page.mouse.click(previewPoint.x, previewPoint.y);
+
+  const placed = await saveProject(page, testInfo.outputPath('placed.madori'));
+  const [window] = openings(placed);
+  expect(wallHost(placed, window)?.width).toBe(24);
+  expect(window.at[0]).toBeCloseTo(237, 0);
+  await frameDepth(page.locator(`#scene [data-id="${window.id}"]`)).toBeCloseTo(24, 6);
+  await page.locator('#stage').focus();
+  await page.keyboard.press('Control+z');
+  await expect(sceneObjects(page)).toHaveCount(2);
+  await expect(page.locator(`#scene [data-id="${window.id}"]`)).toHaveCount(0);
+  await page.keyboard.press('Control+y');
+  await frameDepth(page.locator(`#scene [data-id="${window.id}"]`)).toBeCloseTo(24, 6);
+
+  const movedPath = testInfo.outputPath('moved-join.madori');
+  await clickPoints(page, [[125, 390]]);
+  await dragOnCanvas(page, [187, 310], [187, 415]);
+  const moved = await saveProject(page, movedPath);
+  expect(openings(moved)[0].wallId).toBe(window.wallId);
+  expect(openings(moved)[0].at[1]).toBeCloseTo(415, 0);
+
+  await openProject(page, movedPath);
+  await dragOnCanvas(page, [187, 415], [187, 475]);
+  const reopened = await saveProject(page, testInfo.outputPath('reopened-join.madori'));
+  expect(openings(reopened)[0].wallId).toBe(window.wallId);
+  expect(openings(reopened)[0].at[1]).toBeCloseTo(475, 0);
 });
 
 test('SVG のグループ分けを切り替えても描画と重なり順が同じ', async ({ page }) => {

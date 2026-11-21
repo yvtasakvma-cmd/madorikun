@@ -494,6 +494,50 @@ export function wallCutRun(walls, first) {
   }));
 }
 
+export function windowWallJoin(walls, first, t, width) {
+  const half = width / 2;
+  const firstLength = lengthOf(first.a, first.b);
+  const fromFirst = clamp(t, 0, 1) * firstLength;
+  if (fromFirst >= half && firstLength - fromFirst >= half) return null;
+
+  const run = wallCutRun(walls.filter(wall => wall.width === first.width && Boolean(wall.dashed) === Boolean(first.dashed)), first);
+  if (run.size < 2) return null;
+  const tail = [...run.values()].at(-1);
+  const length = tail.offset + tail.length;
+  if (length < width) return null;
+
+  const center = clamp(run.get(first.id).offset + fromFirst, half, length - half);
+  // A window has one host wall. Keep the segments outside its span separate.
+  const members = [...run.values()].filter(entry =>
+    entry.offset < center + half - 1e-7 && entry.offset + entry.length > center - half + 1e-7);
+  if (members.length < 2) return null;
+  const start = members[0];
+  const end = members.at(-1);
+  const wall = {
+    ...first,
+    a: start.reversed ? start.wall.b : start.wall.a,
+    b: end.reversed ? end.wall.a : end.wall.b,
+    cutEnds: [Boolean(start.wall.cutEnds?.[start.reversed ? 1 : 0]), Boolean(end.wall.cutEnds?.[end.reversed ? 0 : 1])],
+  };
+  return { wall, t: (center - start.offset) / lengthOf(wall.a, wall.b), members };
+}
+
+export function mergeWindowHost(graph, { wall, members }) {
+  const byId = new Map(members.map(entry => [entry.wall.id, entry]));
+  graph.objects = graph.objects.filter(item => !byId.has(item.id) || item.id === wall.id)
+    .map(item => item.id === wall.id ? wall : item);
+  for (const opening of graph.objects) {
+    const previous = byId.get(opening.wallId);
+    if (!previous) continue;
+    if (previous.reversed) {
+      // Preserve the screen orientation when the old host pointed the other way.
+      opening.flipX = !opening.flipX;
+      opening.flipY = !opening.flipY;
+    }
+    positionOpening(opening, wall, projectOnWall(opening.at, wall).t);
+  }
+}
+
 function cutDistance(entry, t) {
   return entry.offset + (entry.reversed ? 1 - t : t) * entry.length;
 }
