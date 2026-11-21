@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
+  add, alignFinalCorner, angleOf, blank, clamp, DEFAULT_TEXT_FONT, detach, floors, isDrawingAngle, isWallSegment, layers, lengthOf, lerp, makePart, OBJECT_LIMIT, openingFrameDepth, PART_DESIGNS, parts, partSize, partVariant, positionOpening, roomColors,
   projectOnWall, readRoomLabel, ROOM_LABEL_TATAMI, ROOM_LABELS, roomLabelText, rotate, snapClosingCorner, snapDrawingAngle, snapFixtureToWall, sub, syncOpenings, uid, wallDashArray, wallDirection,
 } from './model.js';
 import {
@@ -76,6 +76,8 @@ const selectedObjects = () => doc().objects.filter(item => selection.has(item.id
 const editable = id => layer(id)?.visible && !layer(id).locked;
 const placementKind = () => tool === 'wall' ? (columnPlacement ? 'column' : '')
   : tool === 'text' ? activeRoomLabel : activeParts[tool];
+const isDividerPart = kind => kind === 'kitchen' && partDesigns.kitchen === 'divider';
+const drawingDivider = () => tool === 'fixture' && isDividerPart(activeParts.fixture);
 
 function status(message, error = false) {
   const output = $('#status');
@@ -167,6 +169,7 @@ function fieldInstructions(title) {
     floor: '角をクリックして囲む · Shiftで角度を自由に',
     color: '角をクリックして囲む · Shiftで角度を自由に',
     text: activeRoomLabel ? 'ドラッグ、または配置する場所をクリック' : '部屋名をドラッグ · クリックで自由入力',
+    fixture: drawingDivider() ? `仕切り線の${pending.length ? '終点' : '始点'}をクリック · Shiftで自由な角度` : '',
     zoom: 'クリックで拡大 · Ctrl＋0で全体表示',
   }[tool];
   return label ? `<span class="context-hint">${label}</span>` : '';
@@ -191,7 +194,7 @@ function renderContext() {
     + selectField('書体', 'default-font', defaults.font, fontChoices())
     + numberField('サイズ', 'default-size', defaults.size, 4, 300);
   if (Object.hasOwn(activeParts, contextTool)) controls = partPalette(contextTool, activeParts[contextTool], partDesigns)
-    + '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>';
+    + (drawingDivider() ? '' : '<span class="context-hint">パーツを選び、キャンバスをクリックして配置</span>');
   if (contextTool === 'underlay') controls = importButton() + (doc().underlay
     ? `<span class="context-hint underlay-name" title="${escapeHtml(doc().underlay.name)}">${escapeHtml(doc().underlay.name)}</span>`
     : '<span class="context-hint">PDF・PNG・JPEG・WebPをキャンバスへドロップできます</span>');
@@ -768,7 +771,33 @@ function paletteItemAt(kind, point) {
   return null;
 }
 
-function placePaletteItem(kind, point) {
+function drawDivider(point, free) {
+  const start = pending[0];
+  if (!start) {
+    pending = [point];
+    hover = null;
+    renderContext();
+    scheduleDraw();
+    return;
+  }
+  const end = drawingPoint(point, free);
+  const length = lengthOf(start, end);
+  if (length < 1) return;
+  if (length > 50000) {
+    status('仕切り線が長すぎます。終点を始点に近づけてください。', true);
+    return;
+  }
+  const part = makePart('kitchen', lerp(start, end, 0.5), undefined, 'divider');
+  part.h = length;
+  part.angle = (angleOf(start, end) + 270) % 360;
+  placeItem(part, '仕切り線を配置しました。');
+}
+
+function placePaletteItem(kind, point, free = false) {
+  if (isDividerPart(kind)) {
+    drawDivider(point, free);
+    return;
+  }
   const item = paletteItemAt(kind, point);
   const name = item?.layer === 'text' ? ROOM_LABELS[kind] : parts[kind]?.name;
   if (item) placeItem(item, name + 'を配置しました。');
@@ -817,7 +846,7 @@ function drawingClick(event, point) {
   }
   const kind = placementKind();
   if (kind) {
-    placePaletteItem(kind, point);
+    placePaletteItem(kind, point, event.shiftKey);
     return;
   }
   if (tool === 'wall') {
@@ -1176,7 +1205,7 @@ stage.addEventListener('pointermove', event => {
       queuedMove = 0;
       if (drag?.pointer === latestMove.pointerId) updateDrag(latestMove);
     });
-  } else if (kind && editable(tool) && !fileBusy) {
+  } else if (kind && !isDividerPart(kind) && editable(tool) && !fileBusy) {
     draftPart = paletteItemAt(kind, toWorld(screenPoint(event)));
     scheduleDraw();
   } else if (pending.length || (tool === 'wall' && editable('wall'))) {
@@ -1491,12 +1520,14 @@ document.addEventListener('click', event => {
   else if (fileBusy || drag) return;
   else if (source.dataset.partDesign) {
     const kind = partDesignMenu.dataset.kind;
+    clearDraft();
     partDesigns[kind] = source.dataset.partDesign;
     activeParts[parts[kind].layer] = kind;
     partDesignMenu.hidePopover();
     if (tool !== contextTool) selectTool(contextTool);
     else {
       renderContext();
+      scheduleDraw();
       stage.focus({ preventScroll: true });
     }
   } else if (source.dataset.tool) {
@@ -1506,6 +1537,7 @@ document.addEventListener('click', event => {
       renderAll();
     }
   } else if (source.dataset.part || Object.hasOwn(source.dataset, 'roomLabel')) {
+    if (drawingDivider()) clearDraft();
     if (tool !== contextTool) selectTool(contextTool);
     if (source.dataset.part === 'column') {
       columnPlacement = true;
@@ -1650,7 +1682,7 @@ area.addEventListener('dragover', event => {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'copy';
   if (types.includes('Files')) $('#drag-note').hidden = false;
-  else if (draggedKind) {
+  else if (draggedKind && !isDividerPart(draggedKind)) {
     const point = toWorld(screenPoint(event));
     draftPart = paletteItemAt(draggedKind, point);
     scheduleDraw();
@@ -1669,6 +1701,11 @@ area.addEventListener('drop', event => {
   scheduleDraw();
   const kind = event.dataTransfer.getData(partMime);
   if (kind && !fileBusy && !drag) {
+    if (isDividerPart(kind)) {
+      if (!editable('fixture')) return;
+      activeParts.fixture = kind;
+      selectTool('fixture');
+    }
     stage.focus({ preventScroll: true });
     placePaletteItem(kind, toWorld(screenPoint(event)));
   } else if (event.dataTransfer.files.length) loadFile(event.dataTransfer.files[0]);
