@@ -1,4 +1,4 @@
-import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctionCaps, wallSegments, washerDashDefault } from './model.js';
+import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
 import { burnerDrawing, stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
@@ -311,10 +311,11 @@ export function wallDrawingGeometry(objects) {
     if (!openings.has(item.wallId)) openings.set(item.wallId, []);
     openings.get(item.wallId).push(item);
   }
-  const caps = wallJunctionCaps(walls, openings);
-  return new Map(walls.map(wall => [
-    wall.id, { wall, segments: wallSegments(wall, openings.get(wall.id), caps.get(wall.id)) },
-  ]));
+  const joints = wallJunctions(walls, openings);
+  return new Map(walls.map((wall, index) => {
+    const { caps, clip } = joints.get(wall.id) ?? {};
+    return [wall.id, { wall, segments: wallSegments(wall, openings.get(wall.id), caps), clip, index }];
+  }));
 }
 
 function strokeIntersectsBox(a, b, width, box) {
@@ -363,10 +364,16 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
       } else if (isWallSegment(item)) {
-        const segments = geometry.get(item.id).segments;
+        const { segments, clip, index } = geometry.get(item.id);
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
         const dash = item.dashed ? ` stroke-dasharray="${wallDashArray(item.width)}"` : '';
         drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}"${dash}>${drawing}</g>`;
+        if (clip) {
+          const id = `${entries ? 'editor' : 'output'}-wall-clip-${index}`;
+          const { x, y, width, height } = clip;
+          drawing = `<defs><clipPath id="${id}"><rect x="${x}" y="${y}" width="${width}" height="${height}"/></clipPath></defs>
+            <g clip-path="url(#${id})">${drawing}</g>`;
+        }
       } else if (item.layer === 'text') {
         const surface = fills.findLast(fill => pointInPolygon(item.at, fill.points));
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';

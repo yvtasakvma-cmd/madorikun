@@ -311,7 +311,47 @@ function firstWallAtOrBeyond(walls, axis, value) {
   return low;
 }
 
-export function wallJunctionCaps(walls, openings) {
+function diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints) {
+  const vector = sub(wall.b, wall.a);
+  const [dx, dy] = vector.map(Math.abs);
+  const reach = (dx + dy) * wall.width / (2 * Math.hypot(dx, dy));
+  const low = wall.a.map((value, axis) => Math.min(value, wall.b[axis]) - reach);
+  const high = wall.a.map((value, axis) => Math.max(value, wall.b[axis]) + reach);
+  let clipped = false;
+
+  for (const axis of [0, 1]) {
+    const along = 1 - axis;
+    const mates = byDirection[along];
+    const searchRadius = maxHalfWidth[along];
+    const direction = Math.sign(vector[axis]);
+    for (const [tip, outward] of [[wall.a, -direction], [wall.b, direction]]) {
+      let outerFace = -Infinity;
+      const first = firstWallAtOrBeyond(mates, axis, tip[axis] - searchRadius);
+      for (let i = first; i < mates.length; i++) {
+        const mate = mates[i];
+        const offset = mate.a[axis] - tip[axis];
+        if (offset > searchRadius) break;
+        if (Math.abs(offset) > mate.width / 2) continue;
+        const span = mate.b[along] - mate.a[along];
+        const length = Math.abs(span);
+        const distance = (tip[along] - mate.a[along]) * Math.sign(span);
+        const [startCap, endCap] = joints.get(mate.id).caps;
+        if (distance < -startCap - 1e-7 || distance > length + endCap + 1e-7) continue;
+        const t = clamp(distance / length, 0, 1);
+        if (openings.get(mate.id)?.some(part => Math.abs(t - part.t) * length <= part.w / 2 + 1e-7)) continue;
+        outerFace = Math.max(outerFace, offset * outward + mate.width / 2);
+      }
+      if (outerFace >= reach || outerFace === -Infinity) continue;
+      const limit = outward > 0 ? high : low;
+      limit[axis] = tip[axis] + outward * outerFace;
+      clipped = true;
+    }
+  }
+
+  return clipped ? { x: low[0], y: low[1], width: high[0] - low[0], height: high[1] - low[1] } : null;
+}
+
+export function wallJunctions(walls, openings) {
   const byDirection = [[], []];
   for (const wall of walls) {
     const axis = wallDirection(wall);
@@ -319,10 +359,11 @@ export function wallJunctionCaps(walls, openings) {
   }
   for (const axis of [0, 1]) byDirection[axis].sort((a, b) => a.a[1 - axis] - b.a[1 - axis]);
 
-  const caps = new Map();
+  const maxHalfWidth = byDirection.map(group => group.reduce((max, wall) => Math.max(max, wall.width / 2), 0));
+  const joints = new Map();
   for (const axis of [0, 1]) {
     const crossWalls = byDirection[1 - axis];
-    const searchRadius = crossWalls.reduce((max, wall) => Math.max(max, wall.width / 2), 0);
+    const searchRadius = maxHalfWidth[1 - axis];
     for (const wall of byDirection[axis]) {
       const defaultCap = wall.width / 2;
       const radius = Math.max(searchRadius, defaultCap);
@@ -346,10 +387,15 @@ export function wallJunctionCaps(walls, openings) {
         }
         return cap;
       });
-      caps.set(wall.id, ends);
+      joints.set(wall.id, { caps: ends });
     }
   }
-  return caps;
+  for (const wall of walls) {
+    if (wallDirection(wall) !== null) continue;
+    const clip = diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints);
+    if (clip) joints.set(wall.id, { clip });
+  }
+  return joints;
 }
 
 export function wallSegments(wall, openings, caps = [wall.width / 2, wall.width / 2]) {
