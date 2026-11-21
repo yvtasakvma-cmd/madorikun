@@ -1,4 +1,5 @@
 import { basinSymbols } from './basin-symbols.js';
+import { slidingSymbols } from './sliding-symbols.js';
 import { stoveFrameRadii, stoveSymbols } from './stove-symbols.js';
 import { toiletSymbols } from './toilet-symbols.js';
 
@@ -81,7 +82,13 @@ export const PART_DESIGNS = {
       ...Object.fromEntries(Object.entries({ ...stoveSymbols, ...kitchenPieces }).map(([id, symbol]) => [id, symbol.name])),
     },
   },
-  sliding: { default: 'overlap', choices: { overlap: '引き違い', pocket: '片引き' } },
+  sliding: {
+    default: 'overlap',
+    choices: {
+      overlap: '引き違い', pocket: '片引き',
+      ...Object.fromEntries(Object.entries(slidingSymbols).map(([id, symbol]) => [id, symbol.name])),
+    },
+  },
 };
 
 // Projects saved before toilet variants used the side-mounted tank by default.
@@ -91,6 +98,10 @@ export const isSlidingSymbol = kind => kind === 'window' || kind === 'sliding';
 const stoveScale = 39 / stoveSymbols.stove2.size[1];
 const stoveStrokeWidth = Number((5.7 * stoveScale).toFixed(2));
 export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
+  if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
+    const { bounds: [left, , right], stroke } = slidingSymbols[variant];
+    return Number((stroke * parts.sliding.size[0] / (right - left)).toFixed(2));
+  }
   if (isSlidingSymbol(kind)) return 0.8;
   if (kind === 'compass') return 1.4;
   if (kind === 'basin') {
@@ -103,7 +114,11 @@ export function partStrokeDefault(kind, variant = PART_DESIGNS[kind]?.default) {
   return Number((lineWidth * parts.toilet.size[1] / (bottom - top)).toFixed(2));
 }
 
-export function openingFrameDepth(kind, width, depth) {
+export function openingFrameDepth(kind, width, depth, variant) {
+  if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
+    const [left, top, right, bottom] = slidingSymbols[variant].bounds;
+    return Math.min(depth, width * (bottom - top) / (right - left));
+  }
   return isSlidingSymbol(kind) ? Math.min(depth, width * 0.074) : depth;
 }
 

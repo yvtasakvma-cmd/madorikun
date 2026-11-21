@@ -354,7 +354,7 @@ function boundsOf(items) {
 function partRotationBox(item) {
   if (item.layer === 'fixture') return { x: -item.w / 2, y: -item.h / 2, width: item.w, height: item.h };
   const frame = itemBy(item.wallId)?.width ?? clamp(item.h, 4, 10);
-  const halfFrame = openingFrameDepth(item.kind, item.w, frame) / 2;
+  const halfFrame = openingFrameDepth(item.kind, item.w, frame, partVariant(item)) / 2;
   const swingDepth = item.kind === 'swing' ? item.w
     : item.kind === 'double' ? item.w / 2 : item.kind === 'folding' ? item.h : 0;
   const y = item.flipY ? -halfFrame : -Math.max(halfFrame, swingDepth);

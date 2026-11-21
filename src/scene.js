@@ -1,5 +1,6 @@
 import { add, floors, isSlidingSymbol, isWallSegment, lengthOf, openingFrameDepth, PART_DESIGNS, partStrokeDefault, partVariant, rotate, sinkRadius, TEXT_FONTS, textFontId, wallDashArray, wallJunctions, wallSegments, washerDashDefault } from './model.js';
 import { basinDrawing, basinSymbols } from './basin-symbols.js';
+import { slidingDrawing, slidingSymbols } from './sliding-symbols.js';
 import { burnerDrawing, stoveDrawing, stoveSymbols } from './stove-symbols.js';
 import { toiletPaths, toiletSymbols } from './toilet-symbols.js';
 import { washerLabel } from './washer-label.js';
@@ -21,7 +22,7 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
     `<rect x="${a}" y="${b}" width="${width}" height="${height}" rx="${radius}" fill="${fill}"/>`;
   const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
   const circle = (cx, cy, r, fill = 'none') => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`;
-  const depth = openingFrameDepth(kind, w, frameDepth);
+  const depth = openingFrameDepth(kind, w, frameDepth, variant);
   const frame = rect(x, -depth / 2, w, depth, '#ffffff');
   let body = '';
   switch (kind) {
@@ -38,7 +39,9 @@ export function partDrawing(kind, w, h, mono = false, frameDepth = 7, strokeWidt
       break;
     case 'window':
     case 'sliding': {
-      if (kind === 'sliding' && variant === 'pocket') {
+      if (kind === 'sliding' && Object.hasOwn(slidingSymbols, variant)) {
+        body = slidingDrawing(slidingSymbols[variant], w, depth);
+      } else if (kind === 'sliding' && variant === 'pocket') {
         const seam = -w * 0.013;
         const rail = -depth * 0.2;
         const bandTop = depth * 0.12;
