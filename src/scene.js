@@ -313,8 +313,8 @@ export function wallDrawingGeometry(objects) {
   }
   const joints = wallJunctions(walls, openings);
   return new Map(walls.map((wall, index) => {
-    const { caps, clip } = joints.get(wall.id) ?? {};
-    return [wall.id, { wall, segments: wallSegments(wall, openings.get(wall.id), caps), clip, index }];
+    const { caps, clip, wedges } = joints.get(wall.id) ?? {};
+    return [wall.id, { wall, segments: wallSegments(wall, openings.get(wall.id), caps), clip, wedges, index }];
   }));
 }
 
@@ -364,7 +364,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
       } else if (item.layer === 'color') {
         drawing = `<polygon points="${pointList(item.points)}" fill="${mono ? '#ffffff' : item.fill}"/>`;
       } else if (isWallSegment(item)) {
-        const { segments, clip, index } = geometry.get(item.id);
+        const { segments, clip, wedges, index } = geometry.get(item.id);
         drawing = segments.map(([a, b]) => `<path d="M${a.join(' ')}L${b.join(' ')}"/>`).join('');
         const dash = item.dashed ? ` stroke-dasharray="${wallDashArray(item.width)}"` : '';
         drawing = `<g fill="none" stroke="${color}" stroke-width="${item.width}"${dash}>${drawing}</g>`;
@@ -374,6 +374,7 @@ export function renderScene(doc, { mono = false, underlayImage = '', showUnderla
           drawing = `<defs><clipPath id="${id}"><rect x="${x}" y="${y}" width="${width}" height="${height}"/></clipPath></defs>
             <g clip-path="url(#${id})">${drawing}</g>`;
         }
+        if (wedges) drawing += wedges.map(points => `<polygon points="${pointList(points)}" fill="${color}"/>`).join('');
       } else if (item.layer === 'text') {
         const surface = fills.findLast(fill => pointInPolygon(item.at, fill.points));
         const halo = mono ? '#ffffff' : surface?.fill ?? '#ffffff';

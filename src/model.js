@@ -311,6 +311,81 @@ function firstWallAtOrBeyond(walls, axis, value) {
   return low;
 }
 
+const wallJoinEpsilon = 1e-7;
+const crossProduct = ([x, y], [u, v]) => x * v - y * u;
+
+function addAngledWallJoins(walls, openings, byDirection, joints) {
+  const endpoints = new Map();
+  for (const wall of walls) {
+    for (const [end, tip] of [wall.a, wall.b].entries()) {
+      const key = tip.join(',');
+      if (!endpoints.has(key)) endpoints.set(key, []);
+      endpoints.get(key).push({ wall, end, tip });
+    }
+  }
+
+  for (const ends of endpoints.values()) {
+    if (ends.length !== 2) continue;
+    const [first, second] = ends;
+    if (ends.every(({ wall }) => wallDirection(wall) !== null)) continue;
+    if (ends.some(({ wall }) => wall.dashed)) continue;
+    const solidLengths = ends.map(({ wall, end }) => {
+      const length = lengthOf(wall.a, wall.b);
+      return (openings.get(wall.id) ?? []).reduce((clear, part) =>
+        Math.min(clear, (end ? 1 - part.t : part.t) * length - part.w / 2), length);
+    });
+    if (solidLengths.some(length => length <= wallJoinEpsilon)) continue;
+
+    const tip = first.tip;
+    const through = byDirection.some((candidates, along) => {
+      const axis = 1 - along;
+      const start = firstWallAtOrBeyond(candidates, axis, tip[axis] - wallJoinEpsilon);
+      for (let i = start; i < candidates.length; i++) {
+        const mate = candidates[i];
+        if (mate.a[axis] > tip[axis] + wallJoinEpsilon) break;
+        const t = (tip[along] - mate.a[along]) / (mate.b[along] - mate.a[along]);
+        if (t > wallJoinEpsilon && t < 1 - wallJoinEpsilon) return true;
+      }
+      return false;
+    });
+    if (through) continue;
+
+    const directions = ends.map(({ wall, end }) => {
+      const other = end ? wall.a : wall.b;
+      const length = lengthOf(other, tip);
+      return sub(other, tip).map(value => value / length);
+    });
+    const [u, v] = directions;
+    const turn = crossProduct(u, v);
+    if (Math.abs(turn) < wallJoinEpsilon) continue;
+
+    const outer = directions.map(([x, y], index) => {
+      const side = (index ? 1 : -1) * Math.sign(turn) * ends[index].wall.width / 2;
+      return add(tip, [-y * side, x * side]);
+    });
+    const [a, b] = outer;
+    const advance = crossProduct(sub(b, a), v) / turn;
+    const corner = add(a, u.map(value => value * advance));
+    // Bevel long miters and overlap the strokes to prevent antialias seams.
+    const limit = 2.5 * Math.max(first.wall.width, second.wall.width) / 2;
+    const overlap = solidLengths.map((length, index) => Math.min(length, ends[index].wall.width) / 2);
+    const wedge = [tip, add(a, u.map(value => value * overlap[0])), a];
+    if (lengthOf(tip, corner) <= limit) wedge.push(corner);
+    wedge.push(b, add(b, v.map(value => value * overlap[1])));
+
+    for (const { wall, end } of ends) {
+      const joint = joints.get(wall.id) ?? { caps: [wall.width / 2, wall.width / 2] };
+      joint.joinedEnds ??= [false, false];
+      joint.joinedEnds[end] = true;
+      joint.caps[end] = 0;
+      joints.set(wall.id, joint);
+    }
+    const firstJoint = joints.get(first.wall.id);
+    firstJoint.wedges ??= [];
+    firstJoint.wedges.push(wedge);
+  }
+}
+
 function diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints) {
   const vector = sub(wall.b, wall.a);
   const [dx, dy] = vector.map(Math.abs);
@@ -324,7 +399,9 @@ function diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints) {
     const mates = byDirection[along];
     const searchRadius = maxHalfWidth[along];
     const direction = Math.sign(vector[axis]);
-    for (const [tip, outward] of [[wall.a, -direction], [wall.b, direction]]) {
+    for (const [end, tip] of [wall.a, wall.b].entries()) {
+      if (joints.get(wall.id)?.joinedEnds?.[end]) continue;
+      const outward = end ? direction : -direction;
       let outerFace = -Infinity;
       const first = firstWallAtOrBeyond(mates, axis, tip[axis] - searchRadius);
       for (let i = first; i < mates.length; i++) {
@@ -390,10 +467,11 @@ export function wallJunctions(walls, openings) {
       joints.set(wall.id, { caps: ends });
     }
   }
+  addAngledWallJoins(walls, openings, byDirection, joints);
   for (const wall of walls) {
     if (wallDirection(wall) !== null) continue;
     const clip = diagonalWallClip(wall, byDirection, maxHalfWidth, openings, joints);
-    if (clip) joints.set(wall.id, { clip });
+    if (clip) joints.set(wall.id, { ...joints.get(wall.id), clip });
   }
   return joints;
 }
