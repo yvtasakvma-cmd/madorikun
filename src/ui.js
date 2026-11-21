@@ -197,8 +197,10 @@ export function partPalette(layer, current, designs) {
     if (id === 'kitchen') {
       const button = (variant, name = PART_DESIGNS.kitchen.choices[variant]) =>
         partButton(id, name, variant, current === id && designs.kitchen === variant, true);
-      return button('worktop') + button('sink') + splitPartButton(id, 'コンロ', button(designs.stove, 'コンロ'))
-        + button('divider');
+      return `<div class="kitchen-group" role="group" aria-labelledby="kitchen-group-label">
+        <span class="kitchen-group-label" id="kitchen-group-label">キッチン</span>
+        ${button('worktop')}${button('sink')}${splitPartButton(id, 'コンロ', button(designs.stove, 'コンロ'))}${button('divider')}
+      </div>`;
     }
     const control = partButton(id, part.name, designs[id], current === id);
     return Object.hasOwn(PART_DESIGNS, id) ? splitPartButton(id, part.name, control) : control;
